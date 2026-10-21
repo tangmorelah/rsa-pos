@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ติดตั้ง RSA POS บน Supabase</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  /* Layout: a single reading column of numbered setup steps, each a checklist card; a sticky progress bar on top */
+  :root {
+    --bg: #f3f6f4; --surface: #ffffff; --ink: #14231d; --muted: #5b6b64; --line: #d8e1dc;
+    --accent: #0f7a5c; --accent-soft: #e2f2ec; --warn: #9a5b00; --warn-soft: #fff3df; --bad: #a3271d; --bad-soft: #fde9e6;
+    --code-bg: #eef3f0;
+    --display: "Bai Jamjuree", "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, sans-serif;
+    --body: "IBM Plex Sans Thai", "Noto Sans Thai", "Sarabun", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1613; --surface: #17211d; --ink: #e4ede8; --muted: #9cb0a7; --line: #2a3a33;
+      --accent: #4cc39b; --accent-soft: #163a2e; --warn: #f2b45c; --warn-soft: #3a2b12; --bad: #ff8f80; --bad-soft: #3d1c18;
+      --code-bg: #1f2c27; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1613; --surface: #17211d; --ink: #e4ede8; --muted: #9cb0a7; --line: #2a3a33;
+    --accent: #4cc39b; --accent-soft: #163a2e; --warn: #f2b45c; --warn-soft: #3a2b12; --bad: #ff8f80; --bad-soft: #3d1c18;
+    --code-bg: #1f2c27; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font: 400 16px/1.7 var(--body); margin: 0; }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+  .wrap { max-width: 760px; margin: 0 auto; padding-block: 0 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  header.top { padding-block: 32px 8px; display: grid; gap: 8px; }
+  .eyebrow { font: 600 13px/1.4 var(--body); letter-spacing: .06em; color: var(--accent); text-transform: uppercase; }
+  h1 { font: 700 clamp(26px, 5vw, 36px)/1.25 var(--display); margin: 0; text-wrap: balance; }
+  h2 { font: 700 21px/1.35 var(--display); margin: 0; text-wrap: balance; }
+  h3 { font: 600 16px/1.5 var(--body); margin: 0; }
+  p { margin: 0; }
+  .lead { color: var(--muted); max-width: 62ch; }
+  .bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line);
+         padding-block: 10px; margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .bar-in { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--muted); }
+  .meter { flex: 1; height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s ease; }
+  .count { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .reset { font: inherit; font-size: 13px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 8px; padding: 2px 10px; cursor: pointer; }
+  .need { display: grid; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 20px; }
+  .need ul { margin: 0; padding-left: 20px; }
+  ol.steps { list-style: none; margin: 24px 0 0; padding: 0; display: grid; gap: 18px; counter-reset: step; }
+  .step { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 16px; display: grid; gap: 12px; min-width: 0; }
+  .step.done { border-color: var(--accent); }
+  .step-head { display: flex; gap: 12px; align-items: baseline; }
+  .num { font: 700 15px/1 var(--display); color: var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 7px 9px; font-variant-numeric: tabular-nums; flex: none; }
+  .time { font-size: 13px; color: var(--muted); white-space: nowrap; margin-left: auto; }
+  .checks { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .checks label { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; padding: 6px 4px; border-radius: 8px; cursor: pointer; }
+  .checks label:hover { background: var(--code-bg); }
+  .checks input { width: 18px; height: 18px; margin: 4px 0 0; accent-color: var(--accent); }
+  .checks input:checked + span { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+  .checks span { min-width: 0; }
+  .path { font-weight: 600; }
+  code, .code { font: 500 14px/1.5 var(--mono); background: var(--code-bg); border-radius: 6px; padding: 1px 6px; overflow-wrap: anywhere; }
+  .note { border-radius: 10px; padding: 10px 14px; font-size: 15px; display: grid; gap: 4px; }
+  .note.warn { background: var(--warn-soft); color: var(--ink); border-left: 3px solid var(--warn); }
+  .note.bad { background: var(--bad-soft); color: var(--ink); border-left: 3px solid var(--bad); }
+  .note.ok { background: var(--accent-soft); border-left: 3px solid var(--accent); }
+  .note b { font-weight: 600; }
+  details { border-top: 1px solid var(--line); padding-top: 10px; }
+  summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+  details > div { display: grid; gap: 6px; padding-top: 8px; color: var(--muted); font-size: 15px; }
+  .copy { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 6px; padding: 0 8px; margin-left: 6px; cursor: pointer; }
+  .tbl { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 13px; letter-spacing: .03em; }
+  section.after { margin-top: 32px; display: grid; gap: 14px; }
+  .foot { margin-top: 32px; color: var(--muted); font-size: 14px; }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow">คู่มือติดตั้งสำหรับเจ้าของร้าน</span>
+    <h1>ติดตั้ง RSA - POS Assistant บน Supabase</h1>
+    <p class="lead">ทำบนคอมพิวเตอร์ครั้งเดียว ประมาณ 30–45 นาที ติ๊กแต่ละข้อเมื่อทำเสร็จ หน้านี้จำไว้ในเครื่องที่เปิดอยู่ ปิดแล้วกลับมาทำต่อได้</p>
+  </header>
+
+  <div class="bar" role="status" aria-live="polite">
+    <div class="bar-in"><span class="count" id="count">0 / 0 ข้อ</span><span class="meter" aria-hidden="true"><i id="meter"></i></span><button class="reset" id="reset" type="button">เริ่มใหม่</button></div>
+  </div>
+
+  <div class="need">
+    <h3>เตรียมก่อนเริ่ม</h3>
+    <ul>
+      <li>ไฟล์ <code>rsa-pos.zip</code> แตกไฟล์แล้ว จะได้โฟลเดอร์ <code>rsa-pos</code> ที่มี <code>index.html</code> และ <code>install.sql</code></li>
+      <li>คอมพิวเตอร์ที่มี Chrome หรือ Edge และอีเมล (หรือบัญชี Google / GitHub) และบัญชี GitHub (สมัคร Supabase ด้วย GitHub ได้ ปุ่ม Continue with GitHub) ใช้แพ็กเกจฟรีได้ทั้งคู่</li>
+      <li>ชื่อพนักงานแต่ละคน และ PIN 6 หลักที่จะตั้งให้ (ตั้งเองตอนสร้างผู้ใช้ ไม่ต้องจดไว้ในไฟล์ใด)</li>
+    </ul>
+  </div>
+
+  <ol class="steps">
+    <li class="step" data-step="1">
+      <div class="step-head"><span class="num">1</span><h2>สร้างโปรเจกต์ Supabase</h2><span class="time">5 นาที</span></div>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c1a"><span>เปิด <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">supabase.com/dashboard</a> สมัครหรือเข้าสู่ระบบ</span></label></li>
+        <li><label><input type="checkbox" id="c1b"><span>กด <span class="path">New project</span> ตั้งชื่อ เช่น <code>rsa-pos</code></span></label></li>
+        <li><label><input type="checkbox" id="c1c"><span>ตั้ง <span class="path">Database password</span> แล้วเก็บไว้ในที่ปลอดภัย (แอปไม่ใช้รหัสนี้ แต่ต้องใช้ถ้าวันหลังจะกู้หรือย้ายข้อมูล)</span></label></li>
+        <li><label><input type="checkbox" id="c1d"><span>เลือก Region <span class="path">Southeast Asia (Singapore)</span> ใกล้ไทยที่สุด เปิดเร็วกว่า แล้วกด <span class="path">Create new project</span> รอ 1–2 นาที</span></label></li>
+      </ul>
+    </li>
+
+    <li class="step" data-step="2">
+      <div class="step-head"><span class="num">2</span><h2>ติดตั้งฐานข้อมูลด้วย install.sql</h2><span class="time">5 นาที</span></div>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c2a"><span>เปิดไฟล์ <code>install.sql</code> ด้วย Notepad (Windows) หรือ TextEdit (Mac) กด Ctrl+A แล้ว Ctrl+C (Mac ใช้ ⌘)</span></label></li>
+        <li><label><input type="checkbox" id="c2b"><span>ใน Supabase เมนูซ้าย <span class="path">SQL Editor</span> → <span class="path">New query</span> → วาง (Ctrl+V)</span></label></li>
+        <li><label><input type="checkbox" id="c2c"><span>กด <span class="path">Run</span> แล้วรอจนขึ้น <code>Success. No rows returned</code></span></label></li>
+      </ul>
+      <div class="note warn"><b>ถ้าขึ้นกล่องเตือนว่าคำสั่งนี้ทำลายข้อมูล (destructive)</b><span>กดยืนยันได้ ไฟล์นี้ตั้งใจล็อกตารางไม่ให้ใครอ่านตรง ๆ ได้ ไม่ได้ลบข้อมูลของร้าน</span></div>
+      <details><summary>ถ้า Run แล้วขึ้นข้อความสีแดง</summary><div>
+        <p>คัดลอกข้อความสีแดงทั้งหมดส่งมาให้ดู ระหว่างนั้นอย่าแก้ไฟล์ <code>install.sql</code></p>
+        <p>ถ้าวางทั้งไฟล์ไม่ได้เพราะไฟล์ใหญ่ ให้รันไฟล์ในโฟลเดอร์ <code>supabase</code> ทีละไฟล์ตามลำดับเลข 01, 02 … 12 แล้วจบด้วย 99 ผลเหมือนกัน</p>
+      </div></details>
+    </li>
+
+    <li class="step" data-step="3">
+      <div class="step-head"><span class="num">3</span><h2>คัดลอก Project URL และ Publishable key</h2><span class="time">3 นาที</span></div>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c3a"><span>เมนูซ้ายล่าง <span class="path">Project Settings</span> → <span class="path">Data API</span> (หรือหน้าแรกของโปรเจกต์) คัดลอก <span class="path">Project URL</span> หน้าตาแบบ <code>https://abcd1234.supabase.co</code></span></label></li>
+        <li><label><input type="checkbox" id="c3b"><span><span class="path">Project Settings</span> → <span class="path">API Keys</span> คัดลอก <span class="path">Publishable key</span> ขึ้นต้นด้วย <code>sb_publishable_</code> (ถ้าโปรเจกต์มีแต่คีย์แบบเก่า ใช้ <span class="path">anon public</span> ที่ขึ้นต้นด้วย <code>eyJ</code> แทนได้)</span></label></li>
+      </ul>
+      <div class="note bad"><b>ห้ามใช้ Secret key หรือ service_role</b><span>คีย์ที่ขึ้นต้นด้วย <code>sb_secret_</code> หรือมีคำว่า service_role เปิดอ่านข้อมูลทุกอย่างได้ แอปจะไม่ยอมรับคีย์แบบนี้ อย่าส่งให้ใครและอย่าใส่ในไฟล์ใด</span></div>
+      <div class="note ok"><b>Publishable key เปิดเผยได้</b><span>ตารางทุกตารางถูกล็อก คีย์นี้เรียกได้แค่คำสั่งของระบบ และทุกคำสั่งตรวจผู้ใช้กับ PIN ที่ฐานข้อมูล</span></div>
+      <details><summary>หาเมนูไม่เจอ</summary><div><p>Supabase ปรับชื่อเมนูเป็นระยะ ให้หาคำว่า <span class="path">API Keys</span> หรือ <span class="path">Connect</span> ที่ด้านบนของหน้าโปรเจกต์ ค่า URL และคีย์จะอยู่ในนั้น</p></div></details>
+    </li>
+
+    <li class="step" data-step="4">
+      <div class="step-head"><span class="num">4</span><h2>เอาหน้าเว็บขึ้นออนไลน์ด้วย GitHub Pages</h2><span class="time">5–10 นาที</span></div>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c4a"><span>เข้า <a href="https://github.com/new" target="_blank" rel="noopener">github.com/new</a> ตั้งชื่อ repository เช่น <code>rsa-pos</code> เลือก <span class="path">Public</span> แล้วกด <span class="path">Create repository</span></span></label></li>
+        <li><label><input type="checkbox" id="c4b"><span>ในหน้า repo ใหม่ กดลิงก์ <span class="path">uploading an existing file</span> เปิดโฟลเดอร์ <code>rsa-pos</code> ในเครื่อง เลือก<b>ไฟล์และโฟลเดอร์ข้างใน</b>ทั้งหมด (<code>index.html</code>, <code>assets</code>, <code>icons</code>, <code>config.js</code> …) ลากไปวาง แล้วกด <span class="path">Commit changes</span></span></label></li>
+        <li><label><input type="checkbox" id="c4c"><span>ไปที่ <span class="path">Settings</span> → <span class="path">Pages</span> ช่อง Source เลือก <span class="path">Deploy from a branch</span> · Branch เลือก <span class="path">main</span> และ <span class="path">/ (root)</span> → <span class="path">Save</span></span></label></li>
+        <li><label><input type="checkbox" id="c4d"><span>รอ 1–2 นาทีแล้วรีเฟรชหน้า Pages จะขึ้นลิงก์ <code>https://ชื่อผู้ใช้.github.io/rsa-pos/</code> เก็บลิงก์นี้ไว้ใช้ขั้นต่อไป</span></label></li>
+      </ul>
+      <div class="note warn"><b>อย่าลากตัวโฟลเดอร์ rsa-pos ทั้งก้อน</b><span><code>index.html</code> ต้องอยู่ชั้นนอกสุดของ repo ถ้าเปิดลิงก์แล้วขึ้น 404 ให้ดูว่าในหน้า repo เห็น <code>index.html</code> ทันทีหรือเปล่า ไม่ต้องอัปโหลดโฟลเดอร์ <code>demo</code> ก็ได้</span></div>
+      <div class="note bad"><b>repo แบบ Public ทุกคนเห็นไฟล์ได้</b><span>ในไฟล์ไม่มี PIN รหัสผ่าน หรือข้อมูลร้าน ข้อมูลอยู่ใน Supabase ที่ล็อกไว้ อย่าอัปโหลดไฟล์ที่มี Secret key, service_role หรือรหัสผ่านฐานข้อมูลเด็ดขาด (GitHub Pages แบบฟรีใช้ได้เฉพาะ repo Public)</span></div>
+      <details><summary>ทางเลือก: ให้ทุกเครื่องเชื่อมต่อเองโดยไม่ต้องกรอก</summary><div>
+        <p>ก่อนอัปโหลด เปิดไฟล์ <code>config.js</code> ใส่ Project URL และ Publishable key ตามตัวอย่าง แล้วบันทึก (ค่าทั้งสองจะมองเห็นได้ใน repo ซึ่งคีย์ชนิดนี้ออกแบบให้เปิดเผยได้)</p>
+        <p class="code">window.RSA_CONFIG = { supabaseUrl: 'https://abcd1234.supabase.co', anonKey: 'sb_publishable_...' };</p>
+        <p>ถ้าไม่อยากให้เห็นใน repo ให้เว้นว่างไว้ ระบบจะถามค่าทั้งสองตอนเปิดครั้งแรกบนคอม แล้วส่งลิงก์ที่เชื่อมต่อแล้วให้พนักงานในขั้นที่ 7</p>
+      </div></details>
+      <details><summary>ใช้ที่อื่นแทน GitHub Pages</summary><div><p>ไฟล์เป็นหน้าเว็บธรรมดา ไม่ต้อง build ลากโฟลเดอร์ไปวางที่ <a href="https://app.netlify.com/drop" target="_blank" rel="noopener">app.netlify.com/drop</a> หรือใช้ Cloudflare Pages ได้เหมือนกัน ขอให้เปิดผ่าน https</p></div></details>
+    </li>
+
+    <li class="step" data-step="5">
+      <div class="step-head"><span class="num">5</span><h2>เปิดครั้งแรกและตั้งผู้ดูแลระบบ</h2><span class="time">3 นาที</span></div>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c5a"><span>เปิดลิงก์ GitHub Pages บนคอม วาง Project URL และ Publishable key กด <span class="path">เชื่อมต่อ</span></span></label></li>
+        <li><label><input type="checkbox" id="c5b"><span>ตั้งผู้ดูแลระบบคนแรก: ชื่อที่แสดง ชื่อผู้ใช้ และ PIN 6 หลัก (หลีกเลี่ยง 123456 วันเกิด หรือเลขซ้ำ)</span></label></li>
+        <li><label><input type="checkbox" id="c5c"><span>เข้าสู่ระบบด้วยผู้ใช้นั้น แล้วเปิดเมนู <span class="path">ผู้ใช้ สิทธิ์ และ PIN</span> สร้างผู้ใช้เจ้าของร้าน และพนักงานทีละคน</span></label></li>
+      </ul>
+      <div class="note warn"><b>PIN เป็นของแต่ละคน</b><span>ระบบเก็บ PIN แบบเข้ารหัส ไม่มีหน้าไหนแสดง PIN อย่าเขียน PIN ลงไฟล์หรือกลุ่มแชต ถ้าลืม ผู้ดูแลตั้ง PIN ใหม่ให้ได้ ใส่ผิด 5 ครั้งระบบล็อก 5 นาที</span></div>
+    </li>
+
+    <li class="step" data-step="6">
+      <div class="step-head"><span class="num">6</span><h2>ใส่ข้อมูลร้านก่อนเปิดขาย</h2><span class="time">15–20 นาที</span></div>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c6a"><span><span class="path">ข้อมูลหลัก › สินค้า</span>: ราคา หมวด ราคา Delivery ราคาลดตอนเย็น (ถ้ามี) และ<b>สูตร</b>ของแต่ละสินค้า สินค้าที่ไม่มีสูตรจะไม่ตัดสต็อก</span></label></li>
+        <li><label><input type="checkbox" id="c6b"><span><span class="path">ข้อมูลหลัก › บัญชีเงิน</span>: ยอดยกมาของลิ้นชักและบัญชีธนาคาร แล้วติ๊กยืนยัน</span></label></li>
+        <li><label><input type="checkbox" id="c6c"><span><span class="path">ข้อมูลหลัก › ช่องทางขาย</span>: % ค่าธรรมเนียม LINE MAN / Grab ตามสัญญา แล้วติ๊กยืนยัน</span></label></li>
+        <li><label><input type="checkbox" id="c6d"><span><span class="path">สต๊อกคงเหลือ › ตั้งยอดยกมา</span>: วัตถุดิบที่มีอยู่และต้นทุนต่อหน่วย</span></label></li>
+        <li><label><input type="checkbox" id="c6e"><span><span class="path">ตั้งค่า</span>: เวลาปิดร้าน เวลาเตือน เงินทอนต้นวัน วันหยุดประจำสัปดาห์ วันหยุดพิเศษ และเวลาเริ่มราคาลดตอนเย็น แล้วกด <span class="path">บันทึกและยืนยันทั้งหมด</span></span></label></li>
+        <li><label><input type="checkbox" id="c6f"><span><span class="path">พนักงาน › จ่ายค่าจ้าง</span>: ใส่ค่าแรงต่อวันของแต่ละคน</span></label></li>
+        <li><label><input type="checkbox" id="c6g"><span><span class="path">ค่าใช้จ่าย</span>: ค่าใช้จ่ายประจำเดือน เช่น ค่าเช่า (ตรวจวันครบกำหนดแล้วติ๊กยืนยัน)</span></label></li>
+      </ul>
+      <p class="lead">หน้า <span class="path">ตั้งค่า</span> มีรายการ "ที่ควรตั้งค่าให้ครบ" บอกว่ายังขาดอะไร ตัวเลขที่ยังไม่ยืนยันจะมีป้ายเตือนในรายงาน</p>
+    </li>
+
+    <li class="step" data-step="7">
+      <div class="step-head"><span class="num">7</span><h2>ส่งลิงก์ให้พนักงานเปิดในมือถือ</h2><span class="time">5 นาที</span></div>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c7a"><span>เมนู <span class="path">ส่งลิงก์ให้พนักงาน</span> ให้พนักงานสแกน QR หรือส่งลิงก์ทาง LINE</span></label></li>
+        <li><label><input type="checkbox" id="c7b"><span>iPhone: เปิดใน Safari → ปุ่มแชร์ → <span class="path">เพิ่มไปยังหน้าจอโฮม</span> · Android: Chrome → เมนู ⋮ → <span class="path">ติดตั้งแอป</span> หรือ <span class="path">เพิ่มลงในหน้าจอหลัก</span></span></label></li>
+        <li><label><input type="checkbox" id="c7c"><span>พนักงานแตะชื่อตัวเอง กด PIN แล้วกด <span class="path">เปิดการแจ้งเตือนเวลาปิดยอด</span> บนหน้าแรก</span></label></li>
+      </ul>
+    </li>
+
+    <li class="step" data-step="8">
+      <div class="step-head"><span class="num">8</span><h2>ซ้อมหนึ่งรอบก่อนเปิดร้านจริง</h2><span class="time">10 นาที</span></div>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c8a"><span>ขาย 3 แบบ: หน้าร้านเงินสด หน้าร้าน QR และ Delivery 1 ออเดอร์</span></label></li>
+        <li><label><input type="checkbox" id="c8b"><span>ขาย 1 บิลแบบ <span class="path">จ่ายผสม</span> เงินสด + QR</span></label></li>
+        <li><label><input type="checkbox" id="c8c"><span>แก้ไข 1 ออเดอร์ และยกเลิก 1 ออเดอร์ (ใส่เหตุผลว่า "ซ้อมระบบ")</span></label></li>
+        <li><label><input type="checkbox" id="c8d"><span>รับสินค้า 1 บิล บันทึกค่าใช้จ่ายพร้อมรูปใบเสร็จ 1 รายการ บันทึกของเสีย และพนักงานกิน</span></label></li>
+        <li><label><input type="checkbox" id="c8e"><span>ส่งรายงานปิดยอด 6 ขั้น แล้วเจ้าของเปิด <span class="path">รออนุมัติ</span> ตรวจ</span></label></li>
+        <li><label><input type="checkbox" id="c8f"><span><span class="path">ส่งออกข้อมูลบัญชีและภาษี</span> ลองดาวน์โหลด CSV 1 ไฟล์</span></label></li>
+      </ul>
+      <div class="note warn"><b>ระบบไม่ลบข้อมูลการเงิน</b><span>รายการซ้อมจะอยู่ในประวัติเป็น "ยกเลิก" ตลอด ถ้าอยากให้ฐานข้อมูลร้านจริงสะอาด ให้ซ้อมบนโปรเจกต์ Supabase แยกอีกโปรเจกต์ (แพ็กเกจฟรีสร้างได้ 2 โปรเจกต์) หรือลองที่หน้าทดลองก่อน</span></div>
+    </li>
+  </ol>
+
+  <section class="after">
+    <h2>ดูแลหลังเปิดร้าน</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>เรื่อง</th><th>ทำอะไร</th><th>บ่อยแค่ไหน</th></tr></thead>
+      <tbody>
+        <tr><td>สำรองข้อมูล</td><td><span class="path">ส่งออกข้อมูลบัญชีและภาษี</span> → สมุดเงินกลาง และยอดขายรายรายการ เก็บไว้ใน Google Drive</td><td>ทุกสัปดาห์</td></tr>
+        <tr><td>แพ็กเกจฟรีหยุดชั่วคราว</td><td>Supabase หยุดโปรเจกต์ฟรีที่แทบไม่มีการใช้งานติดกัน 7 วัน และส่งอีเมลเตือนก่อน ร้านที่ขายทุกวันไม่โดน ถ้าโดน ให้เข้า Dashboard กด <span class="path">Restore</span> ข้อมูลยังอยู่ ถ้าร้านจะหยุดนานหรืออยากได้สำรองอัตโนมัติ พิจารณาแพ็กเกจ Pro</td><td>ตอนร้านหยุดยาว</td></tr>
+        <tr><td>อัปเดตเวอร์ชันใหม่</td><td>รัน <code>install.sql</code> ตัวใหม่ทั้งไฟล์ใน SQL Editor (ข้อมูลเดิมอยู่ครบ) แล้วในหน้า repo กด <span class="path">Add file</span> → <span class="path">Upload files</span> ลากไฟล์ชุดใหม่ทับ → <span class="path">Commit changes</span> รอ 1–2 นาที</td><td>เมื่อได้ไฟล์ใหม่</td></tr>
+        <tr><td>พนักงานลาออก</td><td><span class="path">ผู้ใช้ สิทธิ์ และ PIN</span> → ปิดใช้งาน (ประวัติของคนนั้นยังอยู่)</td><td>ทันที</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>ติดปัญหา</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>อาการ</th><th>สาเหตุที่พบบ่อย</th><th>แก้</th></tr></thead>
+      <tbody>
+        <tr><td>เชื่อมต่อไม่ได้</td><td>URL หรือคีย์คัดลอกไม่ครบ มีช่องว่าง หรือใส่คีย์ผิดชนิด</td><td>คัดลอกใหม่จากขั้นที่ 3 URL ต้องขึ้นต้นด้วย <code>https://</code></td></tr>
+        <tr><td>ขึ้นว่าไม่พบฟังก์ชัน <code>rsa_status</code></td><td>ยังไม่ได้รัน <code>install.sql</code> หรือรันไม่จบ</td><td>ทำขั้นที่ 2 ใหม่จนขึ้น Success</td></tr>
+        <tr><td>เปิดลิงก์ GitHub Pages แล้วขึ้น 404</td><td>อัปโหลดทั้งโฟลเดอร์ <code>rsa-pos</code> ซ้อนเข้าไป หรือยังไม่ได้เปิด Pages</td><td>ให้ <code>index.html</code> อยู่ชั้นนอกสุดของ repo แล้วตรวจ Settings → Pages</td></tr>
+        <tr><td>อัปเดตแล้วมือถือยังเห็นแบบเก่า</td><td>GitHub Pages ใช้เวลา 1–2 นาที และเครื่องเก็บหน้าเดิมไว้</td><td>รอสักครู่ ปิดแอปแล้วเปิดใหม่</td></tr>
+        <tr><td>ทุกเครื่องเปิดไม่ได้พร้อมกัน</td><td>โปรเจกต์ถูกหยุดชั่วคราว</td><td>Supabase Dashboard → <span class="path">Restore project</span></td></tr>
+        <tr><td>พนักงานเข้าไม่ได้</td><td>ใส่ PIN ผิด 5 ครั้ง หรือบัญชีถูกปิดใช้งาน</td><td>รอ 5 นาที หรือให้ผู้ดูแลตั้ง PIN ใหม่</td></tr>
+        <tr><td>กดบันทึกแล้วไม่ไปต่อ</td><td>มีข้อความสีแดงบอกสาเหตุ</td><td>แคปหน้าจอข้อความสีแดงส่งมา</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <p class="foot">ชื่อเมนูใน Supabase และ GitHub อาจเปลี่ยนได้ตามรุ่นของเว็บนั้น ถ้าไม่ตรง ให้มองหาคำหลักตัวหนาในแต่ละข้อ</p>
+</div>
+
+<script>
+(function () {
+  var KEY = 'rsa.setup.checks';
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.checks input[type=checkbox]'));
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+  function update() {
+    var done = boxes.filter(function (b) { return b.checked; }).length;
+    document.getElementById('count').textContent = done + ' / ' + boxes.length + ' ข้อ';
+    document.getElementById('meter').style.width = (boxes.length ? (done * 100 / boxes.length) : 0) + '%';
+    document.querySelectorAll('.step').forEach(function (s) {
+      var bs = s.querySelectorAll('.checks input'); var all = bs.length > 0;
+      bs.forEach(function (b) { if (!b.checked) all = false; });
+      s.classList.toggle('done', all);
+    });
+  }
+  boxes.forEach(function (b) {
+    b.checked = !!saved[b.id];
+    b.addEventListener('change', function () {
+      saved[b.id] = b.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { /* the page still works without storage */ }
+      update();
+    });
+  });
+  document.getElementById('reset').addEventListener('click', function () {
+    boxes.forEach(function (b) { b.checked = false; }); saved = {};
+    try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
+    update();
+  });
+  update();
+})();
+</script>
+</body>
+</html>
