@@ -374,38 +374,38 @@
 
   RSA.MENU = [
     { group: 'งานประจำวัน', items: [
-      { r: 'close', perm: 'closing.add', icon: 'moon', t: 'บันทึกรายงานปิดยอดร้านประจำวัน' },
       { r: 'sell', perm: 'sales.add', icon: 'cart', t: 'บันทึกการขาย' },
-      { r: 'orders', perm: 'sales.view', icon: 'receipt', t: 'รายการขายรายวัน' },
-      { r: 'receive', perm: 'stock.receive', icon: 'box', t: 'รับสินค้า / ซื้อของเข้า' },
+      { r: 'close', perm: 'closing.add', icon: 'moon', t: 'รายงานปิดยอดวันนี้' },
+      { r: 'orders', perm: 'sales.view', icon: 'receipt', t: 'รายการขายวันนี้' },
+      { r: 'receive', perm: 'stock.receive', icon: 'box', t: 'รับสินค้า' },
       { r: 'expense', perm: 'expense.add', icon: 'wallet', t: 'บันทึกค่าใช้จ่าย' },
-      { r: 'waste', perm: 'waste.add', icon: 'trash', t: 'ของเสีย / ของกิน' },
+      { r: 'waste', perm: 'waste.add', icon: 'trash', t: 'ของเสีย / สวัสดิการทีมงาน' },
       { r: 'stock', perm: 'stock.view', icon: 'box', t: 'สต๊อกคงเหลือ' },
-      { r: 'my', perm: 'closing.add', icon: 'calendar', t: 'สรุปของฉัน (วันทำงาน ตรงเวลา)' },
+      { r: 'my', perm: 'closing.add', icon: 'calendar', t: 'สรุปของฉัน' },
     ] },
-    { group: 'เจ้าของร้าน', items: [
+    { group: 'รายงาน', items: [
       { r: 'dashboard', perm: 'report.view', icon: 'chart', t: 'ภาพรวม' },
       { r: 'sales', perm: 'report.view', icon: 'chart', t: 'ยอดขาย' },
-      { r: 'cashflow', perm: 'cashflow.view', icon: 'flow', t: 'เงินสด / Cashflow' },
-      { r: 'accounts', perm: 'cashflow.view', icon: 'receipt', t: 'บัญชีเงิน / ภาษี' },
-      { r: 'products', perm: 'report.view', icon: 'tag', t: 'สินค้า / SKU' },
-      { r: 'stock', perm: 'report.view', icon: 'box', t: 'สต๊อก' },
-      { r: 'expenses', perm: 'expense.view_all', icon: 'wallet', t: 'ค่าใช้จ่าย' },
-      { r: 'purchases', perm: 'report.view', icon: 'box', t: 'ซื้อสินค้า' },
+      { r: 'products', perm: 'report.view', icon: 'tag', t: 'สินค้า / ขายดี' },
+      { r: 'stock', perm: 'report.view', icon: 'box', t: 'สต๊อกคงเหลือ' },
       { r: 'delivery', perm: 'report.view', icon: 'flow', t: 'Delivery' },
-      { r: 'invest', perm: 'cashflow.view', icon: 'chart', t: 'เงินลงทุน / คืนทุน' },
-      { r: 'staff', perm: 'report.view', icon: 'users', t: 'พนักงาน' },
-      { r: 'settings', perm: 'settings.manage', icon: 'gear', t: 'ตั้งค่า' },
-    ] },
-    { group: 'งานเจ้าของ', items: [
-      { r: 'approvals', perm: 'expense.approve', icon: 'check', t: 'รออนุมัติ' },
+      { r: 'purchases', perm: 'report.view', icon: 'box', t: 'ซื้อของเข้าร้าน' },
+      { r: 'staff', perm: 'report.view', icon: 'users', t: 'พนักงาน / ค่าจ้าง' },
       { r: 'closes', perm: 'closing.view_all', icon: 'calendar', t: 'รายงานปิดยอดทั้งหมด' },
-      { r: 'export', perm: 'export.run', icon: 'download', t: 'ส่งออกข้อมูลบัญชีและภาษี' },
-      { r: 'master', perm: 'master.manage', icon: 'tag', t: 'ข้อมูลหลัก: สินค้า ราคา สูตร โปร' },
     ] },
-    { group: 'ระบบ', items: [
-      { r: 'share', perm: 'admin.users', icon: 'users', t: 'ส่งลิงก์ให้พนักงาน' },
+    { group: 'เงิน บัญชี และภาษี', items: [
+      { r: 'approvals', perm: 'expense.approve', icon: 'check', t: 'รออนุมัติ' },
+      { r: 'cashflow', perm: 'cashflow.view', icon: 'flow', t: 'เงินสด / Cashflow' },
+      { r: 'expenses', perm: 'expense.view_all', icon: 'wallet', t: 'ค่าใช้จ่าย' },
+      { r: 'accounts', perm: 'cashflow.view', icon: 'receipt', t: 'บัญชีเงิน / ภาษี' },
+      { r: 'export', perm: 'export.run', icon: 'download', t: 'ส่งออกให้นักบัญชี' },
+      { r: 'invest', perm: 'cashflow.view', icon: 'chart', t: 'เงินลงทุน / คืนทุน' },
+    ] },
+    { group: 'ร้าน', items: [
+      { r: 'master', perm: 'master.manage', icon: 'tag', t: 'สินค้า ราคา สูตร โปร' },
       { r: 'users', perm: 'admin.users', icon: 'users', t: 'ผู้ใช้ สิทธิ์ และ PIN' },
+      { r: 'share', perm: 'admin.users', icon: 'users', t: 'ส่งลิงก์ให้พนักงาน' },
+      { r: 'settings', perm: 'settings.manage', icon: 'gear', t: 'ตั้งค่าร้าน' },
       { r: 'audit', perm: 'audit.view', icon: 'shield', t: 'ประวัติการใช้งาน' },
     ] },
   ];
@@ -417,8 +417,8 @@
   RSA.isOwnerView = isOwnerView;
   function tabs() {
     const t = isOwnerView()
-      ? [['dashboard', 'chart', 'ภาพรวม'], ['sales', 'cart', 'ยอดขาย'], ['approvals', 'check', 'รออนุมัติ', 'expense.approve'], ['cashflow', 'wallet', 'เงิน', 'cashflow.view'], ['more', 'list', 'เพิ่มเติม']]
-      : [['home', 'home', 'หน้าหลัก'], ['sell', 'cart', 'บันทึกขาย', 'sales.add'], ['close', 'moon', 'รายงานวันนี้', 'closing.add'], ['my', 'calendar', 'สรุปของฉัน', 'closing.add'], ['more', 'list', 'เพิ่มเติม']];
+      ? [['dashboard', 'home', 'ภาพรวม'], ['approvals', 'check', 'อนุมัติ', 'expense.approve'], ['sales', 'chart', 'ยอดขาย', 'report.view', 'center'], ['cashflow', 'wallet', 'เงิน', 'cashflow.view'], ['more', 'list', 'เพิ่มเติม']]
+      : [['home', 'home', 'หน้าหลัก'], ['close', 'moon', 'ปิดยอด', 'closing.add'], ['sell', 'cart', 'ขาย', 'sales.add', 'center'], ['my', 'calendar', 'ของฉัน', 'closing.add'], ['more', 'list', 'เพิ่มเติม']];
     return t.filter((x) => !x[3] || RSA.can(x[3]));
   }
   RSA.tabs = tabs;
@@ -453,7 +453,7 @@
         ${RSA.staffView() ? '<div class="banner" style="margin:10px 14px 0"><span class="dot"></span><span>กำลังดูโหมดพนักงาน · <a href="#" id="sv-off">กลับโหมดเจ้าของ</a></span></div>' : ''}
         <main id="view"><div class="boot">กำลังโหลด…</div></main>
       </div>
-      <nav class="tabbar" aria-label="เมนูลัด">${tb.map(([r, ic, t]) => `<a href="#/${r}" ${r === activeTab ? 'aria-current="page"' : ''}>${RSA.icon(ic)}<span>${t}</span>${r === 'approvals' ? '<span class="badge" data-badge hidden></span>' : ''}</a>`).join('')}</nav>
+      <nav class="tabbar" aria-label="เมนูหลัก">${tb.map(([r, ic, t, , c]) => `<a href="#/${r}" class="${c || ''}" ${r === activeTab ? 'aria-current="page"' : ''}>${RSA.icon(ic)}<span>${t}</span>${r === 'approvals' ? '<span class="badge" data-badge hidden></span>' : ''}</a>`).join('')}</nav>
     </div>`;
   }
 
@@ -494,7 +494,8 @@
   RSA.def('more', { title: 'เพิ่มเติม' }, async function (el) {
     const me = RSA.state.boot.me, tabNames = tabs().map((x) => x[0]);
     const seen = new Set(tabNames);
-    const groups = RSA.MENU.filter((g) => isOwnerView() || g.group === 'งานประจำวัน' || g.group === 'ระบบ').map((g) => {
+    const groups = RSA.MENU.filter((g) => isOwnerView() || g.group === 'งานประจำวัน' || g.group === 'ร้าน')
+      .sort((a, b) => (isOwnerView() && a.group === 'งานประจำวัน' ? 1 : 0) - (isOwnerView() && b.group === 'งานประจำวัน' ? 1 : 0)).map((g) => {
       const items = g.items.filter((i) => RSA.can(i.perm) && !seen.has(i.r));
       items.forEach((i) => seen.add(i.r));
       return items.length ? RSA.sec(g.group) + RSA.list(items.map((i) => RSA.row({ href: '#/' + i.r, icon: i.icon, t: esc(i.t) }))) : '';
@@ -678,16 +679,17 @@
               : `ยังไม่ได้ส่งรายงานวันนี้ · ร้านปิด ${esc(closeAt)} น. · ส่งให้ตรงเวลาภายใน ${esc(due)} น.`}</span></a>`;
       } catch (e) { /* buttons still work without the summary */ }
     }
-    const btns = [
-      { r: 'sell', perm: 'sales.add', icon: 'cart', t: 'บันทึกการขาย', d: 'กดสินค้า เลือกช่องทาง รับเงิน', main: true },
-      { r: 'close', perm: 'closing.add', icon: 'moon', t: 'รายงานปิดยอดวันนี้', d: '6 ขั้น: ยอดขาย Delivery ของเสีย ของเหลือ เงินสด ส่ง' },
+    // the bottom bar already has sell / close / my summary: the home screen lists only the other daily jobs
+    const tabNames = tabs().map((x) => x[0]);
+    const jobs = [
       { r: 'receive', perm: 'stock.receive', icon: 'box', t: 'รับสินค้า', d: 'ของเข้าร้าน ค่าขนส่ง ใครจ่าย' },
-      { r: 'expense', perm: 'expense.add', icon: 'wallet', t: 'ค่าใช้จ่าย', d: 'ถ่ายบิล เลือกแหล่งเงิน' },
-      { r: 'waste', perm: 'waste.add', icon: 'trash', t: 'ของเสีย / ของกิน', d: 'ของเสีย พนักงานกิน เจ้าของหยิบ' },
-      { r: 'my', perm: 'closing.add', icon: 'calendar', t: 'สรุปของฉัน', d: 'วันทำงาน ตรงเวลา หลังเวลา' },
-    ].filter((b) => RSA.can(b.perm));
-    el.innerHTML = `<h2 style="padding:2px 4px">สวัสดี ${esc(me.display_name)}</h2>${card}${closeBar}
-      <div class="tiles">${btns.map((b) => `<a class="tile ${b.main ? 'main' : ''}" href="#/${b.r}"><span class="ic">${RSA.icon(b.icon)}</span><span>${esc(b.t)}</span><small>${esc(b.d)}</small></a>`).join('')}</div>
+      { r: 'expense', perm: 'expense.add', icon: 'wallet', t: 'ค่าใช้จ่าย', d: 'ถ่ายบิล เลือกว่าจ่ายจากเงินไหน' },
+      { r: 'waste', perm: 'waste.add', icon: 'trash', t: 'ของเสีย / สวัสดิการทีมงาน', d: 'ของเสีย หรือของที่ทีมงานกิน' },
+      { r: 'sell', perm: 'sales.add', icon: 'cart', t: 'บันทึกการขาย', d: '' },
+      { r: 'close', perm: 'closing.add', icon: 'moon', t: 'รายงานปิดยอดวันนี้', d: '' },
+    ].filter((b) => RSA.can(b.perm) && !tabNames.includes(b.r));
+    el.innerHTML = `<h2 style="padding:2px 4px;font-size:1.05rem">สวัสดี ${esc(me.display_name)}</h2>${card}${closeBar}
+      ${jobs.length ? RSA.sec('งานอื่นวันนี้') + RSA.list(jobs.map((b) => RSA.row({ href: '#/' + b.r, icon: b.icon, t: esc(b.t), s: esc(b.d) }))) : ''}
       ${window.Notification && Notification.permission === 'default' && RSA.can('closing.add') ? '<button class="btn ghost small" id="notif">เปิดการแจ้งเตือนเวลาปิดยอดบนเครื่องนี้</button>' : ''}`;
     const nb = el.querySelector('#notif'); if (nb) nb.addEventListener('click', () => Notification.requestPermission().then(() => nb.remove()));
     if (RSA.remind) RSA.remind();

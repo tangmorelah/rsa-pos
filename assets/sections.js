@@ -24,50 +24,49 @@
   const dayLabel = (iso) => { const d = new Date(iso + 'T12:00:00'); return d.getDate() + '/' + (d.getMonth() + 1); };
 
   // ------------------------------------------------------------ 1. overview: one big number, a quiet list of key numbers, then what to look at
-  R.def('dashboard', { title: 'ภาพรวมร้าน', tab: 'dashboard' }, async function (el) {
+  R.def('dashboard', { title: 'ภาพรวม', tab: 'dashboard' }, async function (el) {
     await periodPage(el, 'dashboard', async (box, r) => {
       const [ov, dash] = await Promise.all([R.api('report.overview', r), R.api('dashboard', {})]);
       const k = ov.kpi, p = ov.prev, n = ov.now;
-      const target = Number(n.profit_target), mnp = Number(n.month_net_profit), rev = Number(k.revenue) || 0;
-      const sf = rev ? (Number(k.storefront) / rev) * 100 : 0;
+      const target = Number(n.profit_target), mnp = Number(n.month_net_profit);
       const low = Number(n.min_working_capital) && Number(n.cash) < Number(n.min_working_capital);
       const cl = dash.close;
       const todo = dash.exceptions.slice().sort((a, b) => (a.level === 'warn' ? 0 : 1) - (b.level === 'warn' ? 0 : 1))
         .map((e) => R.row({ href: '#/' + (R.EX_ROUTE[e.kind] || 'dashboard'), icon: e.level === 'warn' ? 'shield' : 'list', tone: e.level === 'warn' ? 'warn' : '', t: esc(e.text) }));
       const canHol = R.can('settings.manage') && !cl, oneOff = (R.settingVal('closed_dates', []) || []).includes(R.today());
-      box.innerHTML = `<div class="full"><div class="status-line ${cl || dash.holiday ? 'ok' : ''}"><span class="dot"></span><span>${cl
-          ? `ปิดยอดวันนี้แล้ว ${R.time(cl.submitted_at)} น. · ${esc(cl.submitted_by_name)}${cl.on_time === false ? ' (หลังเวลา)' : ''}${Number(cl.variance) ? ' · เงินสด ' + signed(cl.variance) : ''}`
-          : dash.holiday ? `วันนี้ร้านหยุด${Number(dash.sales.orders_count) ? ` แต่มีการขาย ${dash.sales.orders_count} ออเดอร์ ควรส่งรายงานปิดยอด` : ' ไม่ต้องปิดยอด'}`
-          : `วันนี้ยังไม่ปิดยอด · ส่งภายใน ${esc(dash.due_time)} น.`}</span>
-          ${canHol && (!dash.holiday || oneOff) ? `<button type="button" class="btn small ghost" id="hol">${dash.holiday ? 'ยกเลิกวันหยุดวันนี้' : 'วันนี้ร้านหยุด'}</button>` : ''}</div></div>
-        <section class="hero">
-          <span class="lbl">ยอดขาย · ${esc(R.periodLabel())}</span>
-          <span class="amt"><b>${baht(k.revenue)}</b>${R.delta(k.revenue, p.revenue)}</span>
-          <div class="splitbar" aria-hidden="true"><i style="width:${sf}%;background:#1c68cf"></i><i style="width:${100 - sf}%;background:#0f8a6a"></i></div>
-          <div class="split-legend"><span><i style="background:#1c68cf"></i>หน้าร้าน <b>${money(k.storefront)}</b></span><span><i style="background:#0f8a6a"></i>Delivery <b>${money(k.delivery)}</b></span>
-            <span>${qty(k.orders)} ออเดอร์ · เฉลี่ย <b>${money(k.avg_ticket)}</b></span></div>
-        </section>
-        ${R.mlist([
-          ['กำไร (ประมาณ)', [
-            R.mrow('กำไรขั้นต้น', baht(k.gross_profit), { delta: R.delta(k.gross_profit, p.gross_profit), sub: k.profit_complete ? '' : 'ข้อมูลต้นทุนยังไม่ครบ', href: '#/products' }),
-            R.mrow('อัตรากำไร', pct(k.margin_pct), { href: '#/products' }),
+      // today first: was the day closed, and does the cash match
+      const tol = Number(R.settingVal('cash_variance_tolerance', 0)) || 0, v = cl ? Number(cl.variance) : 0, varOff = cl && Math.abs(v) > tol;
+      const status = cl
+        ? { tone: varOff ? 'warn' : 'ok', t: `ปิดยอดวันนี้แล้ว ${R.time(cl.submitted_at)} น. · ${esc(cl.submitted_by_name)}${cl.on_time === false ? ' (หลังเวลา)' : ''}`
+            + (varOff ? `<br><b>เงินสด${v < 0 ? 'ขาด' : 'เกิน'} ${money(Math.abs(v))} บาท</b>` : v ? ` · เงินสด ${signed(v)}` : ' · เงินสดตรง'), btn: varOff ? '<a class="btn small" href="#/approvals">ตรวจ</a>' : '' }
+        : dash.holiday ? { tone: 'ok', t: `วันนี้ร้านหยุด${Number(dash.sales.orders_count) ? ` แต่มีการขาย ${dash.sales.orders_count} ออเดอร์ ควรส่งรายงานปิดยอด` : ' ไม่ต้องปิดยอด'}`, btn: '' }
+        : { tone: '', t: `วันนี้ยังไม่ปิดยอด · ส่งภายใน ${esc(dash.due_time)} น.`, btn: '' };
+      if (canHol && (!dash.holiday || oneOff)) status.btn += `<button type="button" class="btn small ghost" id="hol">${dash.holiday ? 'ยกเลิกวันหยุด' : 'วันนี้ร้านหยุด'}</button>`;
+      // without product costs the profit is meaningless (100% margin): say what is missing instead; other gaps are a note
+      const fl = k.profit_flags || {}, flags = Object.values(fl), noCost = !!fl.cost;
+      const profit = !noCost
+        ? R.mlist([['กำไร (ประมาณ)', [
+            R.mrow('กำไรขั้นต้น', baht(k.gross_profit), { delta: R.delta(k.gross_profit, p.gross_profit), sub: 'อัตรากำไร ' + pct(k.margin_pct), href: '#/products' }),
             R.mrow('ของเสียต่อยอดขาย', pct(k.waste_pct), { sub: 'มูลค่า ' + money(k.waste), tone: Number(k.waste_pct) > 5 ? 'warn' : '', href: '#/products' }),
-            ...(Number(k.markdown) ? [R.mrow('ลดราคาตอนเย็น', money(k.markdown), { sub: 'ส่วนลดระบายของก่อนเสีย', href: '#/products' })] : []),
-            ...(Number(k.staff_meals) || Number(k.owner_use) ? [R.mrow('พนักงานกิน / เจ้าของหยิบ', `${money(k.staff_meals)} / ${money(k.owner_use)}`, { sub: 'ราคาทุน · พนักงานกินนับเป็นค่าสวัสดิการ เจ้าของหยิบไม่นับเป็นต้นทุนร้าน', href: '#/products' })] : [])]],
-          ['เงิน', [
-            R.mrow('เงินทุกบัญชี', baht(n.cash), { sub: 'ในลิ้นชัก ' + money(n.drawer) + (Number(n.min_working_capital) ? ' · ขั้นต่ำ ' + money(n.min_working_capital) : ''), tone: low ? 'bad' : '', href: '#/cashflow' }),
-            R.mrow('รอรับจาก Delivery', baht(n.delivery_receivable), { sub: 'หลังหักค่าธรรมเนียม', href: '#/delivery' }),
+            ...(Number(k.markdown) ? [R.mrow('ลดราคาตอนเย็น', money(k.markdown), { href: '#/products' })] : []),
+            ...(Number(k.staff_meals) ? [R.mrow('สวัสดิการทีมงาน', money(k.staff_meals), { sub: 'ราคาทุน', href: '#/products' })] : []),
+            ...(target ? [R.mrow('กำไรสุทธิเดือนนี้ / เป้า', baht(mnp), { sub: `เป้า ${money(target)} · ${Math.round((mnp / target) * 100)}%`, href: '#/invest' })] : [])]]])
+          + (flags.length ? `<p class="muted small" style="padding:4px 4px 0">ตัวเลขยังเป็นค่าประมาณ: ${flags.map(esc).join(' · ')}</p>` : '')
+        : `<div class="pcard"><span class="k">กำไร</span><b>ยังคำนวณกำไรไม่ได้</b><span class="sub">${esc(fl.cost)} ใส่สูตรหรือต้นทุนแล้วระบบจะคำนวณให้</span>
+            <a class="go" href="#/master/products" style="font-weight:600">ใส่สูตร / ต้นทุนสินค้า ›</a></div>`;
+      box.innerHTML = `<div class="full today-bar ${status.tone}"><span class="dot"></span><span class="txt">${status.t}</span>${status.btn}</div>
+        ${todo.length ? `<div class="full">${R.sec('ต้องทำ (' + todo.length + ')')}${R.shortList(todo, 3, '')}</div>` : ''}
+        <a class="pcard full" href="#/sales" style="text-decoration:none;color:inherit">
+          <span class="k">ยอดขาย · ${esc(R.periodLabel())}</span>
+          <span class="big">${baht(k.revenue)} ${R.delta(k.revenue, p.revenue)}</span>
+          <span class="sub">หน้าร้าน ${money(k.storefront)} · Delivery ${money(k.delivery)} · ${qty(k.orders)} ออเดอร์</span></a>
+        <div class="full">${R.mlist([['เงิน', [
+            R.mrow('เงินทุกบัญชี', baht(n.cash), { sub: Number(n.min_working_capital) ? 'เงินหมุนขั้นต่ำ ' + money(n.min_working_capital) : '', tone: low ? 'bad' : '', href: '#/cashflow' }),
+            R.mrow('ในลิ้นชัก', baht(n.drawer), { href: '#/accounts' }),
+            R.mrow('รอรับจาก Delivery', baht(n.delivery_receivable), { href: '#/delivery' }),
             R.mrow('ค้างจ่าย', baht(n.payables), { href: '#/approvals' }),
-            R.mrow('ร้านค้างคืนพนักงาน / เจ้าของ', baht(n.owed_reimburse), { tone: Number(n.owed_reimburse) ? 'warn' : '', href: '#/expenses' }),
-            R.mrow('เงินสดเกิน / ขาด', signed(k.cash_variance), { sub: `${k.variance_days} วันไม่ตรง จาก ${k.closes} รายงาน`, tone: Number(k.cash_variance) < 0 ? 'bad' : Number(k.cash_variance) > 0 ? 'warn' : '', href: '#/closes' })]],
-          ['สต๊อก', [R.mrow('ใกล้หมด / ควรซื้อ', n.low_stock + ' รายการ', { tone: n.low_stock ? 'warn' : '', href: '#/stock' })]],
-          ...(target ? [['เป้ากำไรเดือนนี้', [R.mrow('กำไรสุทธิ (ประมาณ) / เป้า', `${baht(mnp)}`, { sub: `เป้า ${money(target)}${n.profit_target_confirmed ? '' : ' (ยังไม่ยืนยัน)'} · ${Math.round((mnp / target) * 100)}%`, href: '#/invest' })]]] : [])])}
-        <div class="full">${R.sec('ต้องดู' + (todo.length ? ' (' + todo.length + ')' : ''))}${R.shortList(todo, 3, 'ไม่มีเรื่องค้าง ทุกอย่างเรียบร้อย')}</div>
-        <div class="card full"><h2>ยอดขายรายวัน</h2>${R.lineChart(ov.series.map((s) => ({ ...s, label: dayLabel(s.date) })),
-          [{ key: 'storefront', label: 'หน้าร้าน' }, { key: 'delivery', label: 'Delivery' }], { title: 'ยอดขายรายวัน' })}</div>
-        <div class="card"><h2>สัดส่วนช่องทาง</h2>${R.donut(ov.channels.map((c) => ({ label: c.name, value: c.net })), { center: 'ยอดขาย' })}</div>
-        <div class="card"><h2>สินค้าขายดี</h2>${R.hbars(ov.top_products.map((t) => ({ label: esc((t.emoji ? t.emoji + ' ' : '') + t.name) + ` <span class="muted small">×${qty(t.qty)}</span>`, value: t.revenue })))}</div>
-        <div class="full">${R.list([R.row({ data: { sv: 1 }, icon: 'eye', t: 'ดูโหมดพนักงาน', s: 'เปิดหน้าจอแบบที่พนักงานใช้บนมือถือ' })])}</div>`;
+            ...(Number(n.owed_reimburse) ? [R.mrow('ร้านค้างคืนพนักงาน / เจ้าของ', baht(n.owed_reimburse), { tone: 'warn', href: '#/expenses' })] : [])]]])}</div>
+        <div class="full">${profit}</div>`;
       on(box.querySelector('[data-sv]'), () => R.setStaffView(true));
       on(box.querySelector('#hol'), (ev) => R.busy(ev.currentTarget, async () => {
         const d = R.settingVal('closed_dates', []) || [], t = R.today();
@@ -165,7 +164,7 @@
           ${R.kpi('ส่วนลดจากโปร', baht(rp.promotions.reduce((s, x) => s + Number(x.discount), 0)))}
           ${Number(rp.markdown.discount) ? R.kpi('ลดราคาตอนเย็น', baht(rp.markdown.discount), '', `${qty(rp.markdown.qty)} ชิ้นขายราคาลด · ของเสีย ${money(rp.used.waste)}`) : ''}</div>
         <div class="full">${R.table([
-          { l: 'สินค้า', f: (x) => `${x.emoji ? esc(x.emoji) + ' ' : ''}${esc(x.name)} <span class="muted small">${esc(x.sku || '')}</span>${x.active ? '' : ' <span class="pill">ปิดใช้</span>'}` },
+          { l: 'สินค้า', f: (x) => `${x.emoji ? esc(x.emoji) + ' ' : ''}${esc(x.name)}${x.active ? '' : ' <span class="pill">ปิดใช้</span>'}` },
           { l: 'ราคา', num: true, pri: 2, f: (x) => money(x.price) + (x.delivery_price != null ? `<br><span class="muted small">Delivery ${money(x.delivery_price)}</span>` : '') },
           { l: 'ขาย (หน้าร้าน / Delivery)', num: true, f: (x) => `${qty(x.qty)} ${esc(x.unit)}<br><span class="muted small">${qty(x.storefront_qty)} / ${qty(x.delivery_qty)}</span>` },
           { l: 'ยอดขาย', num: true, main: true, f: (x) => `<b>${money(x.revenue)}</b>` }, { l: 'ส่วนลด', num: true, f: (x) => money(x.discount) },
@@ -176,8 +175,8 @@
           ${rp.open_days < rp.days ? `<p class="muted small" style="padding:0 4px">ค่าเฉลี่ยต่อวันคิดจากวันที่ร้านเปิด ${rp.open_days} วัน (หยุด ${rp.days - rp.open_days} วัน)</p>` : ''}</div>
         <div class="card"><h2>โปรโมชันที่ใช้</h2>${R.list(rp.promotions.map((x) => R.row({ static: true, icon: 'tag', t: esc(x.name), s: x.lines + ' รายการ', v: '−' + money(x.discount) })), 'ไม่มีการใช้โปรในช่วงนี้')}
           ${R.can('master.manage') ? '<a class="btn block" href="#/master/promotions" style="margin-top:10px">จัดการโปรโมชัน</a>' : ''}</div>
-        <div class="card"><h2>ของเสีย / ของกินในช่วงนี้</h2>${R.mlist([['', [R.mrow('ของเสีย', money(rp.used.waste), { tone: Number(rp.used.waste) ? 'warn' : '' }),
-            R.mrow('พนักงานกิน', money(rp.used.staff_meal), { sub: 'ค่าสวัสดิการพนักงาน' }), R.mrow('เจ้าของหยิบใช้', money(rp.used.owner_use), { sub: 'ไม่นับเป็นต้นทุนร้าน' })]]])}
+        <div class="card"><h2>ของเสียและสวัสดิการทีมงาน</h2>${R.mlist([['', [R.mrow('ของเสีย', money(rp.used.waste), { tone: Number(rp.used.waste) ? 'warn' : '' }),
+            R.mrow('สวัสดิการทีมงาน', money(rp.used.staff_meal), { sub: 'ราคาทุน' }), ...(Number(rp.used.owner_use) ? [R.mrow('เจ้าของหยิบใช้ (รายการเดิม)', money(rp.used.owner_use), { sub: 'ไม่นับเป็นต้นทุนร้าน' })] : [])]]])}
           ${R.list(rp.waste.map((w) => R.row({ static: true, icon: 'trash', tone: w.kind === 'waste' ? 'warn' : '', pill: w.kind !== 'waste' ? `<span class="pill">${R.WASTE_KIND[w.kind]}</span>` : '', t: esc(w.item), s: `${qty(w.qty)} ${esc(w.unit)} · ${w.times} ครั้ง · ${(w.reasons || []).map(esc).join(', ')}`, v: baht(w.cost) })), 'ไม่มีของเสีย')}
           ${R.can('master.manage') ? '<a class="btn block" href="#/master/products" style="margin-top:10px">แก้ราคา สูตร สินค้า</a>' : ''}</div>`;
     });
@@ -424,7 +423,7 @@
           { l: 'ออเดอร์ / ยอดขาย', num: true, pri: 2, f: (p) => `${p.orders} · ${money(p.sales)}` },
           { l: 'ยกเลิก / แก้ไข', num: true, pri: 2, f: (p) => p.cancels + ' / ' + p.edits },
           { l: 'ของเสีย (ต้นทุน)', num: true, pri: 2, f: (p) => money(p.waste) },
-          { l: 'พนักงานกิน (ทุน)', num: true, pri: 2, f: (p) => money(p.meals || 0) },
+          { l: 'สวัสดิการทีมงาน (ทุน)', num: true, pri: 2, f: (p) => money(p.meals || 0) },
           ...(pay ? [{ l: '', f: (p) => `<button type="button" class="btn small primary" data-pay="${p.user_id}">จ่ายค่าจ้าง</button>` }] : [])], rows, { empty: 'ยังไม่มีพนักงาน' })}</div>
         <p class="muted small full" style="padding:0 4px">วันทำงาน = วันที่ส่งรายงานปิดยอดสำเร็จ นับให้ผู้ส่งและผู้ร่วมกะ · ตรงเวลา = ส่งภายใน ${esc(R.settingVal('close_due_time', '21:00'))} น. · ค่าจ้าง = วัน × ค่าแรง/วัน + ค่าพิเศษ − เบิกล่วงหน้า</p>
         <div class="full">${R.list([R.row({ href: '#/closes', icon: 'calendar', t: 'รายงานปิดยอดทั้งหมด' }), ...(R.can('admin.users') ? [R.row({ href: '#/users', icon: 'users', t: 'ผู้ใช้ สิทธิ์ และ PIN' })] : [])])}</div>`;

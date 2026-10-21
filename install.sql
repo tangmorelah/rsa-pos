@@ -2889,7 +2889,7 @@ begin
   perform rsa_need(u, 'waste.add');
   if v_kind not in ('waste','staff_meal','owner_use') then perform rsa_err('ประเภทรายการไม่ถูกต้อง'); end if;
   if v_qty <= 0 then perform rsa_err('จำนวนต้องมากกว่า 0'); end if;
-  v_reason := coalesce(nullif(trim(p->>'reason'), ''), case v_kind when 'staff_meal' then 'พนักงานกิน' when 'owner_use' then 'เจ้าของหยิบใช้' end);
+  v_reason := coalesce(nullif(trim(p->>'reason'), ''), case v_kind when 'staff_meal' then 'สวัสดิการทีมงาน' when 'owner_use' then 'เจ้าของหยิบใช้' end);
   if v_reason is null then perform rsa_err('กรุณาระบุสาเหตุของเสีย'); end if;
   if v_for is not null and not exists (select 1 from app_users where id = v_for) then perform rsa_err('ไม่พบพนักงาน'); end if;
   if v_kind <> 'staff_meal' then v_for := null; end if;

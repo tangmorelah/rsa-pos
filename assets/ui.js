@@ -39,33 +39,43 @@
     }
   };
   R.periodLabel = () => { const p = R.period(), r = R.periodRange(p); return (PRESETS.find((x) => x[0] === p.p) || PRESETS[1])[1] + ' · ' + (r.from === r.to ? R.date(r.from) : R.date(r.from) + ' – ' + R.date(r.to)); };
+  // one small button instead of a row of chips: tap to pick the period and turn the comparison on/off
+  const PLABEL = () => { const p = R.period(); return (PRESETS.find((x) => x[0] === p.p) || PRESETS[1])[1]; };
   R.periodBar = (opts) => {
-    const p = R.period(), r = R.periodRange(p);
-    return `<div class="period" id="period">
-      <div class="chips">${PRESETS.map(([k, l]) => `<button type="button" class="chip" data-pp="${k}" aria-pressed="${p.p === k}">${l}</button>`).join('')}</div>
-      ${p.p === 'custom' ? `<div class="two"><label class="field"><span>ตั้งแต่</span><input type="date" id="pp-from" value="${r.from}"></label>
-        <label class="field"><span>ถึง</span><input type="date" id="pp-to" value="${r.to}" max="${R.today()}"></label></div>` : ''}
-      <div class="period-foot"><span class="muted small">${esc(R.periodLabel())}</span>
-        ${opts && opts.compare === false ? '' : `<label class="check small"><input type="checkbox" id="pp-cmp" ${p.cmp ? 'checked' : ''}> เทียบช่วงก่อนหน้า</label>`}</div></div>`;
+    const p = R.period(), r = R.periodRange(p), cmpOk = !(opts && opts.compare === false);
+    return `<div class="period-row" id="period" data-cmp="${cmpOk ? 1 : 0}"><button type="button" class="period-pill" id="pp-open">${esc(PLABEL())} ▾</button>
+      <span class="muted small">${r.from === r.to ? R.date(r.from) : R.date(r.from) + ' – ' + R.date(r.to)}${cmpOk && p.cmp ? ' · เทียบช่วงก่อน' : ''}</span></div>`;
   };
   R.bindPeriod = (root, cb) => {
+    const btn = root.querySelector('#pp-open'); if (!btn) return;
+    const cmpOk = root.querySelector('#period').dataset.cmp === '1';
     const save = (np) => { R.store.set('period', JSON.stringify(np)); cb(); };
-    root.querySelectorAll('[data-pp]').forEach((b) => b.addEventListener('click', () => {
-      const p = R.period(); const np = { ...p, p: b.dataset.pp };
-      if (np.p === 'custom' && !p.from) { const r = R.periodRange(p); np.from = r.from; np.to = r.to; }
-      save(np);
-    }));
-    ['#pp-from', '#pp-to'].forEach((id) => { const i = root.querySelector(id); if (i) i.addEventListener('change', () => {
-      const p = R.period(); save({ ...p, from: root.querySelector('#pp-from').value || p.from, to: root.querySelector('#pp-to').value || p.to });
-    }); });
-    const c = root.querySelector('#pp-cmp'); if (c) c.addEventListener('change', () => save({ ...R.period(), cmp: c.checked }));
+    btn.addEventListener('click', () => {
+      const p = R.period(), r = R.periodRange(p);
+      const m = R.modal('ช่วงเวลา', `<div class="form">
+        <div class="chips" style="flex-wrap:wrap">${PRESETS.map(([k, l]) => `<button type="button" class="chip" data-pp="${k}" aria-pressed="${p.p === k}">${l}</button>`).join('')}</div>
+        <div class="two" id="pp-custom" ${p.p === 'custom' ? '' : 'hidden'}><label class="field"><span>ตั้งแต่</span><input type="date" id="pp-from" value="${r.from}"></label>
+          <label class="field"><span>ถึง</span><input type="date" id="pp-to" value="${r.to}" max="${R.today()}"></label></div>
+        ${cmpOk ? `<label class="check"><input type="checkbox" id="pp-cmp" ${p.cmp ? 'checked' : ''}> เทียบกับช่วงก่อนหน้า</label>` : ''}
+        <button type="button" class="btn primary lg" id="pp-ok">ใช้ช่วงนี้</button></div>`);
+      let pick = p.p;
+      m.el.querySelectorAll('[data-pp]').forEach((b) => b.addEventListener('click', () => {
+        pick = b.dataset.pp; m.el.querySelectorAll('[data-pp]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+        m.el.querySelector('#pp-custom').hidden = pick !== 'custom';
+      }));
+      m.el.querySelector('#pp-ok').addEventListener('click', () => {
+        const c = m.el.querySelector('#pp-cmp'), np = { ...R.period(), p: pick, cmp: c ? c.checked : R.period().cmp };
+        if (pick === 'custom') { np.from = m.el.querySelector('#pp-from').value || r.from; np.to = m.el.querySelector('#pp-to').value || r.to; }
+        m.close(); save(np);
+      });
+    });
   };
 
   // "+12.5%" against the previous period; costs use invert so that going up shows as bad
   R.delta = (cur, prev, invert) => {
     if (!R.period().cmp || prev == null) return '';
     const c = Number(cur || 0), p = Number(prev || 0);
-    if (!p) return c ? '<span class="delta">ใหม่</span>' : '';
+    if (!p) return '';   // nothing to compare with (the previous period had no data)
     const pct = Math.round(((c - p) / Math.abs(p)) * 1000) / 10;
     if (Math.abs(pct) < 1) return `<span class="delta">${pct > 0 ? '+' : pct < 0 ? '−' : ''}${Math.abs(pct)}%</span>`;
     const good = invert ? pct < 0 : pct > 0;
