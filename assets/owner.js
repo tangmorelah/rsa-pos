@@ -325,30 +325,46 @@
   });
 
   // ------------------------------------------------------------ accounting / tax export
-  R.def('export', { title: 'ส่งออกข้อมูลบัญชีและภาษี', back: 'more' }, async function (el) {
+  R.def('export', { title: 'ส่งออกให้นักบัญชี', back: 'more' }, async function (el) {
     const KINDS = [['ledger', 'สมุดเงินกลาง (18 คอลัมน์)'], ['tax_monthly', 'สรุปรายเดือนเตรียมภาษี'], ['sales', 'ยอดขายรายรายการ'], ['money', 'เงินรับ-จ่ายทุกบัญชี'], ['expenses', 'ค่าใช้จ่ายและการจ่าย'], ['delivery', 'Delivery ค่าธรรมเนียม เงินเข้า'],
       ['corrections', 'ยกเลิก คืนเงิน การแก้ไข'], ['receipts', 'ใบรับของและต้นทุน'], ...(R.can('audit.view') ? [['audit', 'ประวัติการใช้งาน']] : [])];
+    // pick by the job, not by the file name; every file is still under "เลือกไฟล์เอง"
+    const PRESETS = [['acct', 'ส่งนักบัญชีรายเดือน', 'สรุปรายเดือน + สมุดเงินกลาง + ค่าใช้จ่าย (3 ไฟล์)', ['tax_monthly', 'ledger', 'expenses']],
+      ['money', 'เช็กเงินเข้า-ออก', 'ทุกบัญชี ไว้เทียบกับ statement ธนาคาร', ['money']],
+      ['sales', 'ดูยอดขายละเอียด', 'ทุกออเดอร์ ทุกรายการสินค้า', ['sales']],
+      ['custom', 'เลือกไฟล์เอง', 'ทั้ง ' + KINDS.length + ' แบบ พร้อมตัวกรอง', null]];
+    const t = R.today(), m0 = t.slice(0, 8) + '01', pm = R.addDays(m0, -1), RANGES = [['this', 'เดือนนี้', m0, t], ['last', 'เดือนก่อน', pm.slice(0, 8) + '01', pm], ['pick', 'เลือกเอง', m0, t]];
     el.innerHTML = `<form class="form" id="f" onsubmit="return false">
-      <div class="card"><div class="field"><span>ข้อมูลที่ต้องการ</span>${R.seg('kind', KINDS, 'ledger', 'wrap')}</div>
+      <div class="form" style="gap:8px">${PRESETS.map(([k, l, d], n) => `<button type="button" class="preset" data-pre="${k}" aria-pressed="${n === 0}"><b>${esc(l)}</b><span>${esc(d)}</span></button>`).join('')}</div>
+      <div class="card" id="adv" hidden><div class="field"><span>ไฟล์</span>${R.seg('kind', KINDS, 'ledger', 'wrap')}</div>
         <p class="note info" id="taxnote" hidden>สรุปรายเดือนเป็นข้อมูลเตรียมให้นักบัญชี ไม่ใช่แบบยื่นภาษี</p>
-        <div class="two"><label class="field"><span>ตั้งแต่</span><input type="date" id="from" value="${R.today().slice(0, 8)}01"></label>
-        <label class="field"><span>ถึง</span><input type="date" id="to" value="${R.today()}"></label></div>
-        <details><summary>กรองเพิ่ม</summary><div class="form" style="margin-top:8px">
-          <label class="field"><span>ช่องทาง</span><select id="ch"><option value="">ทั้งหมด</option>${R.opts(B().channels)}</select></label>
-          <label class="field"><span>สถานะ</span><input type="text" id="status" placeholder="เช่น paid, cancelled, จ่ายแล้ว"></label>
-          <label class="field"><span>ผู้บันทึก</span><select id="user"><option value="">ทุกคน</option>${R.opts(B().users, null, 'display_name')}</select></label></div></details>
-        <p class="muted small">ทุกแถวมีรหัสรายการคงที่ ย้อนหาต้นทางได้ รายการที่ยกเลิกยังอยู่ในไฟล์พร้อมเหตุผล และการส่งออกถูกบันทึกในประวัติ</p></div></form>
+        <label class="field"><span>ช่องทาง</span><select id="ch"><option value="">ทั้งหมด</option>${R.opts(B().channels)}</select></label>
+        <label class="field"><span>สถานะ</span><input type="text" id="status" placeholder="เช่น paid, cancelled, จ่ายแล้ว"></label>
+        <label class="field"><span>ผู้บันทึก</span><select id="user"><option value="">ทุกคน</option>${R.opts(B().users, null, 'display_name')}</select></label></div>
+      <div class="field"><span>ช่วงเวลา</span><div class="chips">${RANGES.map(([k, l], n) => `<button type="button" class="chip" data-rg="${k}" aria-pressed="${n === 0}">${l}</button>`).join('')}</div></div>
+      <div class="two" id="dates" hidden><label class="field"><span>ตั้งแต่</span><input type="date" id="from" value="${m0}"></label><label class="field"><span>ถึง</span><input type="date" id="to" value="${t}"></label></div>
+      <p class="muted small">ทุกแถวมีรหัสรายการคงที่ ย้อนหาต้นทางได้ รายการที่ยกเลิกยังอยู่ในไฟล์พร้อมเหตุผล</p></form>
       <div id="out"></div>
       ${R.actionbar('<button class="btn" id="pv">ดูตัวอย่าง</button><button class="btn primary" id="dl">' + R.icon('download') + ' ดาวน์โหลด CSV</button>')}`;
     const f = el.querySelector('#f');
-    f.querySelector('.seg').addEventListener('change', () => { f.querySelector('#taxnote').hidden = R.segVal(f, 'kind') !== 'tax_monthly'; });
-    const payload = () => ({ kind: R.segVal(f, 'kind'), from: R.val(f, '#from'), to: R.val(f, '#to'), channel_id: R.val(f, '#ch') || null, status: R.val(f, '#status') || null, user_id: R.val(f, '#user') || null });
+    let pre = 'acct';
+    f.querySelectorAll('[data-pre]').forEach((b) => b.addEventListener('click', () => {
+      pre = b.dataset.pre; f.querySelectorAll('[data-pre]').forEach((x) => x.setAttribute('aria-pressed', x === b)); f.querySelector('#adv').hidden = pre !== 'custom';
+    }));
+    f.querySelectorAll('[data-rg]').forEach((b) => b.addEventListener('click', () => {
+      const r = RANGES.find((x) => x[0] === b.dataset.rg); f.querySelectorAll('[data-rg]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+      f.querySelector('#dates').hidden = r[0] !== 'pick'; if (r[0] !== 'pick') { f.querySelector('#from').value = r[2]; f.querySelector('#to').value = r[3]; }
+    }));
+    f.querySelector('#adv .seg').addEventListener('change', () => { f.querySelector('#taxnote').hidden = R.segVal(f, 'kind') !== 'tax_monthly'; });
+    const kinds = () => (pre === 'custom' ? [R.segVal(f, 'kind')] : PRESETS.find((x) => x[0] === pre)[3]);
+    const payload = (kind) => ({ kind, from: R.val(f, '#from'), to: R.val(f, '#to'), ...(pre === 'custom' ? { channel_id: R.val(f, '#ch') || null, status: R.val(f, '#status') || null, user_id: R.val(f, '#user') || null } : {}) });
     document.getElementById('dl').addEventListener('click', (ev) => R.busy(ev.currentTarget, async () => {
-      const p = payload(); const rows = await R.api('export', p);
-      R.downloadCsv(`rsa-${p.kind}-${p.from}-to-${p.to}.csv`, rows); if (rows.length) R.toast('ส่งออก ' + rows.length + ' แถว');
+      let n = 0;
+      for (const k of kinds()) { const p = payload(k); const rows = await R.api('export', p); R.downloadCsv(`rsa-${p.kind}-${p.from}-to-${p.to}.csv`, rows); n += rows.length; }
+      if (n) R.toast('ส่งออก ' + n + ' แถว');
     }));
     document.getElementById('pv').addEventListener('click', (ev) => R.busy(ev.currentTarget, async () => {
-      const rows = await R.api('export', payload());
+      const rows = await R.api('export', payload(kinds()[0]));
       const cols = rows.length ? Object.keys(rows[0]) : [];
       el.querySelector('#out').innerHTML = rows.length ? `${R.sec(rows.length + ' แถว (แสดง 20 แถวแรก)')}<div class="table-wrap"><table class="plain"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>
         ${rows.slice(0, 20).map((r) => `<tr>${cols.map((c) => `<td>${esc(typeof r[c] === 'object' && r[c] ? JSON.stringify(r[c]) : r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : R.empty('ไม่มีข้อมูลในช่วงนี้');

@@ -416,59 +416,66 @@
     const req = !!R.settingVal('waste_evidence_required', false);
     const aw = R.attachWidget(prefix, [['photo', 'รูปของเสีย']], 'รูปของเสีย', { required: req });
     const prods = B().products, items = B().stock_items, users = B().users || [];
+    const st = { by: 'product', id: '' };
+    const unitOf = () => { const x = (st.by === 'product' ? prods : items).find((y) => y.id === st.id); return x ? x.unit : ''; };
     return {
       aw,
-      html: `<div class="field"><span>ประเภท</span>${R.seg(prefix + '-kind', Object.entries(R.WASTE_KIND), 'waste', 'wrap')}</div>
+      html: `${R.seg(prefix + '-kind', [['waste', R.WASTE_KIND.waste], ['staff_meal', R.WASTE_KIND.staff_meal]], 'waste')}
         <p class="muted small" id="${prefix}-khelp"></p>
-        ${R.seg(prefix + '-by', [['product', 'สินค้า'], ['item', 'วัตถุดิบ']], 'product')}
-        <label class="field" id="${prefix}-pbox"><span>สินค้า</span><select id="${prefix}-prod"><option value="">เลือก…</option>${R.opts(prods, null, (x) => (x.emoji ? x.emoji + ' ' : '') + x.name + ' (' + x.unit + ')')}</select></label>
-        <label class="field" id="${prefix}-ibox" hidden><span>วัตถุดิบ</span><select id="${prefix}-item"><option value="">เลือก…</option>${R.opts(items, null, (x) => x.name + ' (' + x.unit + ')')}</select></label>
-        <label class="field"><span>จำนวน <span id="${prefix}-unit" class="muted small"></span></span><input type="number" id="${prefix}-qty" min="0" step="any" inputmode="decimal" required></label>
-        <label class="field" id="${prefix}-ubox" hidden><span>ใครกิน</span><select id="${prefix}-for">${R.opts(users.filter((x) => x.role !== 'admin'), B().me.id, (x) => x.display_name)}</select></label>
+        <div class="field" id="${prefix}-pbox"><span>สินค้า</span><div class="ptiles">${prods.map((p) => `<button type="button" data-wp="${p.id}" aria-pressed="false"><span class="e">${emo(p)}</span><span>${esc(p.name)}</span></button>`).join('')}</div>
+          <button type="button" class="linkbtn" id="${prefix}-toitem">เลือกวัตถุดิบแทน</button></div>
+        <label class="field" id="${prefix}-ibox" hidden><span>วัตถุดิบ</span><select id="${prefix}-item"><option value="">เลือก…</option>${R.opts(items, null, (x) => x.name + ' (' + x.unit + ')')}</select>
+          <button type="button" class="linkbtn" id="${prefix}-toprod">กลับไปเลือกสินค้า</button></label>
+        <div class="field"><span>จำนวน <span id="${prefix}-unit" class="muted small"></span></span>
+          <div class="qstep"><button type="button" data-q="-1" aria-label="ลดจำนวน">−</button><input type="number" id="${prefix}-qty" min="0" step="any" inputmode="decimal" value="1" aria-label="จำนวน"><button type="button" data-q="1" aria-label="เพิ่มจำนวน">+</button></div></div>
+        <label class="field" id="${prefix}-ubox" hidden><span>ของใคร (ไม่บังคับ)</span><select id="${prefix}-for"><option value="">ทีมงาน (ไม่ระบุ)</option>${R.opts(users.filter((x) => x.role !== 'admin'), null, (x) => x.display_name)}</select></label>
         <div class="field" id="${prefix}-rbox"><span class="req">สาเหตุ</span><div class="chips" style="flex-wrap:wrap">${reasons().map((r) => `<button type="button" class="chip" data-reason="${esc(r)}" aria-pressed="false">${esc(r)}</button>`).join('')}</div>
           <input type="text" id="${prefix}-reason" placeholder="หรือพิมพ์สาเหตุ"></div>
         <div id="${prefix}-awbox">${aw.html}</div>`,
       bind(root) {
         aw.bind(root);
-        const unit = () => {
-          const by = R.segVal(root, prefix + '-by');
-          root.querySelector(`#${prefix}-pbox`).hidden = by !== 'product'; root.querySelector(`#${prefix}-ibox`).hidden = by === 'product';
-          const x = by === 'product' ? prods.find((p) => p.id === R.val(root, `#${prefix}-prod`)) : items.find((p) => p.id === R.val(root, `#${prefix}-item`));
-          root.querySelector(`#${prefix}-unit`).textContent = x ? '(' + x.unit + ')' : '';
-        };
+        const $ = (id) => root.querySelector('#' + prefix + id);
+        const unit = () => { $('-unit').textContent = unitOf() ? '(' + unitOf() + ')' : ''; };
         const kind = () => {
           const k = R.segVal(root, prefix + '-kind');
-          root.querySelector(`#${prefix}-rbox`).hidden = k !== 'waste'; root.querySelector(`#${prefix}-awbox`).hidden = k !== 'waste';
-          root.querySelector(`#${prefix}-ubox`).hidden = k !== 'staff_meal';
-          root.querySelector(`#${prefix}-khelp`).textContent = R.WASTE_HELP[k];
+          $('-rbox').hidden = k !== 'waste'; $('-awbox').hidden = k !== 'waste'; $('-ubox').hidden = k !== 'staff_meal';
+          $('-khelp').textContent = R.WASTE_HELP[k];
         };
         root.querySelector(`input[name="${prefix}-kind"]`).closest('.seg').addEventListener('change', kind); kind();
-        root.querySelector(`input[name="${prefix}-by"]`).closest('.seg').addEventListener('change', unit);
-        root.querySelector(`#${prefix}-prod`).addEventListener('change', unit); root.querySelector(`#${prefix}-item`).addEventListener('change', unit);
+        root.querySelectorAll('[data-wp]').forEach((b) => b.addEventListener('click', () => {
+          st.by = 'product'; st.id = b.dataset.wp; root.querySelectorAll('[data-wp]').forEach((x) => x.setAttribute('aria-pressed', x === b)); unit();
+        }));
+        $('-toitem').addEventListener('click', () => { st.by = 'item'; st.id = R.val(root, '#' + prefix + '-item'); $('-pbox').hidden = true; $('-ibox').hidden = false; unit(); });
+        $('-toprod').addEventListener('click', () => { st.by = 'product'; st.id = (root.querySelector('[data-wp][aria-pressed=true]') || {}).dataset?.wp || ''; $('-pbox').hidden = false; $('-ibox').hidden = true; unit(); });
+        $('-item').addEventListener('change', () => { st.id = R.val(root, '#' + prefix + '-item'); unit(); });
+        root.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {
+          const i = $('-qty'); i.value = Math.max(0, r2(Number(i.value || 0) + Number(b.dataset.q)));
+        }));
         root.querySelectorAll('[data-reason]').forEach((b) => b.addEventListener('click', () => {
-          root.querySelector(`#${prefix}-reason`).value = b.dataset.reason;
+          $('-reason').value = b.dataset.reason;
           root.querySelectorAll('[data-reason]').forEach((x) => x.setAttribute('aria-pressed', x === b));
         }));
       },
       payload: (root) => {
-        const by = R.segVal(root, prefix + '-by'), k = R.segVal(root, prefix + '-kind');
+        const k = R.segVal(root, prefix + '-kind');
         if (k === 'waste' && aw.required() && !aw.ids().length) throw new Error('ร้านกำหนดให้แนบรูปของเสียทุกครั้ง');
-        const id = by === 'product' ? R.val(root, `#${prefix}-prod`) : R.val(root, `#${prefix}-item`);
-        if (!id) throw new Error('เลือกสินค้าหรือวัตถุดิบ');
+        if (!st.id) throw new Error(st.by === 'product' ? 'แตะเลือกสินค้า' : 'เลือกวัตถุดิบ');
+        if (!(Number(R.val(root, `#${prefix}-qty`)) > 0)) throw new Error('จำนวนต้องมากกว่า 0');
         if (k === 'waste' && !R.val(root, `#${prefix}-reason`)) throw new Error('เลือกหรือพิมพ์สาเหตุของเสีย');
-        return { kind: k, [by === 'product' ? 'product_id' : 'stock_item_id']: id, qty: R.val(root, `#${prefix}-qty`), reason: k === 'waste' ? R.val(root, `#${prefix}-reason`) : '',
-          for_user_id: k === 'staff_meal' ? R.val(root, `#${prefix}-for`) : null, attachment_ids: k === 'waste' ? aw.ids() : [],
-          _label: (by === 'product' ? prods : items).find((x) => x.id === id) };
+        return { kind: k, [st.by === 'product' ? 'product_id' : 'stock_item_id']: st.id, qty: R.val(root, `#${prefix}-qty`), reason: k === 'waste' ? R.val(root, `#${prefix}-reason`) : '',
+          for_user_id: k === 'staff_meal' ? R.val(root, `#${prefix}-for`) || null : null, attachment_ids: k === 'waste' ? aw.ids() : [],
+          _label: (st.by === 'product' ? prods : items).find((x) => x.id === st.id) };
       },
     };
   }
   R.wasteForm = wasteForm;
-  R.WASTE_KIND = { waste: 'ของเสีย', staff_meal: 'พนักงานกิน', owner_use: 'เจ้าของหยิบใช้' };
+  // owner_use is no longer offered in the form; the label stays for records made before
+  R.WASTE_KIND = { waste: 'ของเสีย', staff_meal: 'สวัสดิการทีมงาน', owner_use: 'เจ้าของหยิบใช้' };
   R.WASTE_HELP = { waste: 'ของเน่า หล่น เหลือขายไม่หมด นับเป็นของเสียของร้าน',
-    staff_meal: 'อาหารพนักงาน ตัดสต็อกและนับเป็นค่าสวัสดิการ ไม่นับเป็นของเสีย',
+    staff_meal: 'ของที่ทีมงานกินหรือใช้ ตัดสต็อกและนับเป็นค่าสวัสดิการทีมงาน ไม่นับเป็นของเสีย',
     owner_use: 'เจ้าของหยิบไปใช้เอง ตัดสต็อก ไม่นับเป็นต้นทุนร้าน แต่นับเป็นเงินที่เจ้าของเอาออกแล้ว (ราคาทุน)' };
 
-  R.def('waste', { title: 'ของเสีย / ของกิน', back: 'home' }, async function (el) {
+  R.def('waste', { title: 'ของเสีย / สวัสดิการ', back: 'home' }, async function (el) {
     const wf = wasteForm('w');
     el.innerHTML = `<form class="card form" id="f" onsubmit="return false">${wf.html}</form><div id="recent"></div>${R.actionbar('<button class="btn primary" id="save">บันทึก</button>')}`;
     const f = el.querySelector('#f'); wf.bind(f);
@@ -863,15 +870,20 @@
     const owner = R.can('report.view') && R.isOwnerView();
     const low = bal.filter((b) => b.status !== 'ok' || Number(b.suggest) > 0);
     const val = bal.reduce((s, b) => s + Number(b.value || 0), 0);
-    el.innerHTML = `${owner ? R.sectTabs('stock') : ''}<div class="btn-row">${R.can('stock.count') ? '<button class="btn" id="count">นับสต็อก</button>' : ''}${R.can('master.manage') ? '<button class="btn" id="opening">ตั้งยอดยกมา</button>' : ''}<a class="btn" href="#/receive">รับสินค้า</a></div>
+    // nothing counted or received yet: one box that says what to do instead of "out of stock" on every row
+    const fresh = bal.length && bal.every((b) => !b.last_received && !Number(b.qty));
+    bal.sort((a, b) => (Number(b.suggest) > 0) - (Number(a.suggest) > 0) || (Number(a.qty) < 0 ? -1 : 0) - (Number(b.qty) < 0 ? -1 : 0));
+    el.innerHTML = `<div class="period-row">${R.can('stock.count') ? '<button class="period-pill" id="count">นับสต็อก</button>' : ''}<a class="period-pill" href="#/receive" style="text-decoration:none">รับสินค้า</a>${R.can('master.manage') && !fresh ? '<button class="period-pill" id="opening">ยอดยกมา</button>' : ''}</div>
+      ${fresh && R.can('master.manage') ? `<div class="setup-box"><b>เริ่มนับสต๊อกครั้งแรก</b><span class="muted">ยังไม่มียอดยกมา ${bal.length} รายการ คงเหลือจึงเป็น 0 ทั้งหมด ใส่จำนวนที่มีอยู่จริงและต้นทุนต่อหน่วยครั้งเดียว</span><button class="btn primary" id="opening">ตั้งยอดยกมา</button></div>` : ''}
       ${pend.length && R.can('stock.approve') ? `<a class="banner" href="#/approvals" style="text-decoration:none;color:inherit"><span class="dot"></span><span>ผลนับสต็อกรออนุมัติ ${pend.length} ครั้ง · แตะเพื่อตรวจ</span></a>` : ''}
-      ${owner ? `<div class="stats">${R.stat('มูลค่าสต๊อก', baht(val), 'ต้นทุนเฉลี่ยถึงร้าน')}${R.stat('ใกล้หมด / ควรซื้อ', low.length + ' รายการ')}${R.stat('ไม่มีต้นทุน', bal.filter((b) => !Number(b.avg_cost)).length + ' รายการ')}${R.stat('ไม่ได้ใช้ในสูตร', bal.filter((b) => !b.used_in_recipe).length + ' รายการ')}</div>` : ''}
+      ${owner && !fresh ? `<p class="muted" style="padding:0 4px">มูลค่า ${baht(val)} · ใกล้หมด / ควรซื้อ ${low.length} รายการ${bal.some((b) => !Number(b.avg_cost)) ? ' · ไม่มีต้นทุน ' + bal.filter((b) => !Number(b.avg_cost)).length : ''}</p>` : ''}
       ${owner ? R.table([
-        { l: 'วัตถุดิบ', f: (b) => `${esc(b.code ? b.code + ' · ' : '')}${esc(b.name)}${b.used_in_recipe ? '' : ' <span class="pill">ไม่อยู่ในสูตร</span>'}` },
+        { l: 'วัตถุดิบ', f: (b) => esc(b.name) },
         { l: 'คงเหลือ', num: true, main: true, f: (b) => (Number(b.qty) < 0 ? `<span style="color:var(--bad)">ติดลบ ${qty(b.qty)} ${esc(b.unit)}</span>` : `${qty(b.qty)} ${esc(b.unit)}`) },
         { l: 'พอใช้', num: true, pri: 1, f: (b) => (Number(b.qty) > 0 && b.days_left != null ? qty(b.days_left) + ' วัน' : '-') },
         { l: 'แนะนำซื้อ', num: true, pri: 1, f: (b) => (Number(b.suggest) ? `<b>${qty(b.suggest)} ${esc(b.unit)}</b>` : '-') },
-        { l: 'สถานะ', pri: 1, f: (b) => (Number(b.qty) < 0 ? '<span class="pill bad">ขายเกินของที่รับเข้า ควรนับ/รับของ</span>' : R.statusPill(b.status)) },
+        { l: 'สถานะ', pri: 1, f: (b) => (Number(b.qty) < 0 ? '<span class="pill bad">ขายเกินของที่รับเข้า ควรนับ</span>' : fresh || b.status === 'ok' ? '' : R.statusPill(b.status)) },
+        { l: 'ใช้ในสูตร', pri: 2, f: (b) => (b.used_in_recipe ? 'ใช่' : 'ไม่อยู่ในสูตรสินค้าไหน') },
         { l: 'ใช้เฉลี่ย/วัน (14 วัน)', num: true, pri: 2, f: (b) => qty(b.avg_daily_use) },
         { l: 'ขั้นต่ำ', num: true, pri: 2, f: (b) => qty(b.min_qty) },
         { l: 'ต้นทุน/หน่วย', num: true, pri: 2, f: (b) => (Number(b.avg_cost) ? money(b.avg_cost) : R.unconfirmed('ยังไม่มี')) },
