@@ -140,14 +140,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); outline
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 /* segmented control & chips */
-.seg { display: flex; gap: 4px; padding: 4px; background: var(--soft); border-radius: 14px; overflow-x: auto; scrollbar-width: none; }
-.seg::-webkit-scrollbar { display: none; }
-.seg label { flex: 1 0 auto; position: relative; }
+/* choices: separate buttons, the picked one solid blue with a tick (no tinted band around the group) */
+.seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg label { flex: 1 1 auto; min-width: calc(33.3% - 8px); position: relative; }
 .seg input { position: absolute; opacity: 0; inset: 0; }
-.seg span { display: grid; place-items: center; min-height: 44px; padding: 6px 14px; border-radius: 11px; font-weight: 600; font-size: .92rem; color: #2a4a72; cursor: pointer; white-space: nowrap; text-align: center; }
-.seg input:checked + span { background: #fff; color: var(--accent); box-shadow: 0 1px 3px rgba(15, 37, 64, .15); }
-.seg input:focus-visible + span { outline: 3px solid #8dbcf3; }
-.seg.wrap { flex-wrap: wrap; } .seg.wrap label { flex: 1 1 40%; }
+.seg span { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--card); font-weight: 600; font-size: .92rem; color: var(--ink); cursor: pointer; text-align: center; line-height: 1.3; }
+.seg input:checked + span { background: var(--accent); border-color: var(--accent); color: #fff; }
+.seg input:checked + span::before { content: "✓"; font-weight: 700; }
+.seg input:focus-visible + span { outline: 3px solid #8dbcf3; outline-offset: 2px; }
+.seg.wrap label { flex: 1 1 calc(50% - 8px); }
 .pos-top .seg { flex-wrap: wrap; } .pos-top .seg label { flex: 1 1 40%; }
 @media (min-width: 600px) { .pos-top .seg label { flex: 1 1 0; } }
 .chips { position: relative; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; }

@@ -169,3 +169,62 @@ alter table waste_records add column if not exists kind text not null default 'w
 alter table waste_records drop constraint if exists waste_records_kind_check;
 alter table waste_records add constraint waste_records_kind_check check (kind in ('waste','staff_meal','owner_use'));
 alter table waste_records add column if not exists for_user_id uuid references app_users(id);
+
+-- ---------------------------------------------------------------- v9: import from other systems (QR / bank lines, platform orders)
+create table if not exists import_batches (
+  id            uuid primary key default gen_random_uuid(),
+  kind          text not null check (kind in ('bank','delivery')),
+  channel_id    uuid references channels(id),
+  account_id    uuid references payment_accounts(id),
+  file_name     text,
+  rows_total    int not null default 0,
+  rows_added    int not null default 0,
+  rows_skipped  int not null default 0,
+  status        text not null default 'done' check (status in ('done','cancelled')),
+  created_at    timestamptz not null default now(),
+  created_by    uuid not null references app_users(id),
+  cancelled_by  uuid references app_users(id),
+  cancel_reason text
+);
+alter table bank_lines add column if not exists import_id uuid references import_batches(id);
+create table if not exists platform_orders (
+  id               uuid primary key default gen_random_uuid(),
+  import_id        uuid not null references import_batches(id),
+  channel_id       uuid not null references channels(id),
+  external_id      text not null,
+  biz_date         date not null,
+  ordered_at       timestamptz not null,
+  items            jsonb not null default '[]',   -- [{name, qty, gross, product_id}]
+  gross            numeric(12,2) not null,         -- menu price total before anything is taken off
+  shop_discount    numeric(12,2) not null default 0,
+  commission       numeric(12,2) not null default 0,
+  vat              numeric(12,2) not null default 0,
+  other_fee        numeric(12,2) not null default 0,
+  platform_status  text not null default 'completed' check (platform_status in ('completed','cancelled')),
+  matched_order_id uuid references orders(id),
+  added_order      boolean not null default false,  -- the order was created from this row
+  status           text not null default 'done' check (status in ('done','cancelled')),
+  created_at       timestamptz not null default now()
+);
+create unique index if not exists platform_orders_once on platform_orders(channel_id, external_id) where status = 'done';
+create index if not exists platform_orders_date on platform_orders(channel_id, biz_date);
+create table if not exists product_aliases (
+  id            uuid primary key default gen_random_uuid(),
+  channel_id    uuid not null references channels(id),
+  external_name text not null,                     -- stored lower-case and trimmed
+  product_id    uuid references products(id),      -- null = not a product of the shop (skip)
+  created_at    timestamptz not null default now(),
+  created_by    uuid references app_users(id),
+  unique (channel_id, external_name)
+);
+do $$
+declare t text;
+begin
+  foreach t in array array['import_batches','platform_orders','product_aliases'] loop
+    execute format('drop trigger if exists %I on %I', t || '_no_delete', t);
+    execute format('create trigger %I before delete on %I for each statement execute function rsa_block_delete()', t || '_no_delete', t);
+    execute format('alter table %I enable row level security', t);
+    if exists (select 1 from pg_roles where rolname = 'anon') then execute format('revoke all on %I from anon', t); end if;
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then execute format('revoke all on %I from authenticated', t); end if;
+  end loop;
+end $$;

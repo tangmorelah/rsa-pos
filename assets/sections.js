@@ -62,7 +62,7 @@
           <span class="sub">หน้าร้าน ${money(k.storefront)} · Delivery ${money(k.delivery)} · ${qty(k.orders)} ออเดอร์</span></a>
         <div class="full">${R.mlist([['เงิน', [
             R.mrow('เงินทุกบัญชี', baht(n.cash), { sub: Number(n.min_working_capital) ? 'เงินหมุนขั้นต่ำ ' + money(n.min_working_capital) : '', tone: low ? 'bad' : '', href: '#/cashflow' }),
-            R.mrow('ในลิ้นชัก', baht(n.drawer), { href: '#/accounts' }),
+            R.mrow('เงินสดหน้าร้าน', baht(n.drawer), { href: '#/accounts' }),
             R.mrow('รอรับจาก Delivery', baht(n.delivery_receivable), { href: '#/delivery' }),
             R.mrow('ค้างจ่าย', baht(n.payables), { href: '#/approvals' }),
             ...(Number(n.owed_reimburse) ? [R.mrow('ร้านค้างคืนพนักงาน / เจ้าของ', baht(n.owed_reimburse), { tone: 'warn', href: '#/expenses' })] : [])]]])}</div>
@@ -114,7 +114,7 @@
       const manage = R.can('cashflow.manage');
       const days = (rec.days || []).filter((d) => Number(d.expected_in) || Number(d.expected_out) || Number(d.actual_in) || Number(d.actual_out));
       const vat = R.settingVal('vat_registered', false);
-      box.innerHTML = `<div class="full">${R.table([{ l: 'บัญชี', f: (a) => esc(a.name) + (a.opening_confirmed ? '' : ' ' + R.unconfirmed('ยอดยกมา')) }, { l: 'ประเภท', f: (a) => (a.is_drawer ? 'ลิ้นชักหน้าร้าน' : a.kind === 'bank' ? 'ธนาคาร' : a.kind) },
+      box.innerHTML = `<div class="full">${R.table([{ l: 'บัญชี', f: (a) => esc(a.name) + (a.opening_confirmed ? '' : ' ' + R.unconfirmed('ยอดยกมา')) }, { l: 'ประเภท', f: (a) => (a.is_drawer ? 'เงินสดหน้าร้าน' : a.kind === 'bank' ? 'ธนาคาร' : a.kind) },
           { l: 'ยอดยกมา', num: true, f: (a) => money(a.opening_balance) }, { l: 'คงเหลือในระบบ', num: true, main: true, f: (a) => `<b>${money(a.balance)}</b>` }, { l: 'ยังไม่ตรวจกับ statement', num: true, f: (a) => (a.kind === 'cash' ? '-' : a.unreconciled) }], cf.accounts)}</div>
         ${banks.length ? `<div class="card full"><h2>กระทบยอดธนาคาร</h2>
           <div class="field"><span>บัญชี</span>${R.seg('racc', banks.map((b) => [b.id, b.name]), acc, 'wrap')}</div>
@@ -234,7 +234,7 @@
       <button class="btn primary lg">บันทึกเงินเข้า</button></form>`);
     aw.bind(m.el);
     const v = (id) => Number(R.val(m.el, id)) || 0;
-    let pv = null;
+    let pv = null; const auto = {};
     const check = () => {
       const fee = ['#b-commission', '#b-vat', '#b-marketing', '#b-other'].reduce((t, id) => t + v(id), 0), g = v('#gross'), n = v('#net');
       m.el.querySelector('#feeSum').textContent = money(fee);
@@ -249,6 +249,13 @@
       m.el.querySelector('#sys').innerHTML = `<div class="mlist">${R.mrow('ในระบบ (ออเดอร์ที่บันทึก)', baht(pv.system_gross), { sub: pv.orders + ' ออเดอร์' })}
         ${R.mrow('พนักงานกรอกตอนปิดยอด', sg == null ? '-' : baht(sg), { sub: sg != null && Math.abs(sg - pv.system_gross) > 0.009 ? 'ต่างจากระบบ ' + signed(sg - pv.system_gross) : '', tone: sg != null && Math.abs(sg - pv.system_gross) > 0.009 ? 'warn' : '' })}
         ${R.mrow('คาดว่าหัก ' + qty(pv.fee_pct) + '%', money(pv.est_fee), { sub: 'คาดว่าได้รับ ' + money(pv.system_gross - pv.est_fee) })}</div>`;
+      // fields filled from the file are refilled when the dates change; anything typed by hand stays
+      const pf = pv.platform, set = (id, x) => { const e = m.el.querySelector(id); if (!e.value || e.value === auto[id]) { e.value = Number(x) ? Number(x).toFixed(2) : ''; auto[id] = e.value; } };
+      if (pf) {
+        // the imported platform file has the real numbers: fill them, the owner only types what reached the bank
+        set('#gross', Number(pf.gross) - Number(pf.discount)); set('#b-commission', pf.commission); set('#b-vat', pf.vat); set('#b-other', pf.other);
+        m.el.querySelector('#sys').insertAdjacentHTML('beforeend', `<p class="note info">เติมจากไฟล์ที่นำเข้า ${pf.orders} ออเดอร์ · ตรวจกับ statement แล้วใส่เงินเข้าจริง</p>`);
+      }
       if (!m.el.querySelector('#gross').value) m.el.querySelector('#gross').value = Number(pv.system_gross).toFixed(2);
       check();
     };
@@ -265,12 +272,21 @@
 
   R.def('delivery', { title: 'Delivery', back: 'more' }, async function (el) {
     await periodPage(el, 'delivery', async (box, r, redraw) => {
-      const d = await R.api('report.delivery', r), manage = R.can('cashflow.manage');
+      const [d, cmp] = await Promise.all([R.api('report.delivery', r), R.api('import.compare', { from: r.from < R.addDays(r.to, -30) ? R.addDays(r.to, -30) : r.from, to: r.to })]);
+      const manage = R.can('cashflow.manage');
+      const cmpRows = cmp.filter((x) => x.imported || Number(x.system_orders));
+      const cmpState = (x) => (!x.imported ? ['', 'ยังไม่นำเข้า'] : Number(x.system_orders) === Number(x.file_orders) && Math.abs(Number(x.system_gross) - Number(x.file_gross)) < 0.01 ? ['ok', 'ตรง'] : ['warn', 'ไม่ตรง']);
       const BD = { commission: 'ค่าคอม', vat: 'VAT ค่าคอม', marketing: 'โฆษณา/โปร', other: 'อื่น ๆ' };
       box.innerHTML = `<div class="full">${R.mlist([['ช่องทาง', d.channels.map((c) => R.mrow(c.name, baht(c.gross), {
           sub: `${c.orders} ออเดอร์ · ตั้งหัก ${qty(c.fee_pct)}%${c.fee_confirmed ? '' : ' (ยังไม่ยืนยัน)'}${c.actual_fee_pct != null ? ' · หักจริง ' + qty(c.actual_fee_pct) + '%' : ''} · รอรับ ${money(c.unsettled)}`,
           tone: c.actual_fee_pct != null && Math.abs(Number(c.actual_fee_pct) - Number(c.fee_pct)) >= 1 ? 'warn' : '' }))]])}
           ${d.channels.some((c) => c.actual_fee_pct != null && Math.abs(Number(c.actual_fee_pct) - Number(c.fee_pct)) >= 1) ? '<p class="muted small" style="padding:4px">อัตราหักจริงต่างจากที่ตั้งไว้ ควรแก้ % ค่าธรรมเนียมที่ ข้อมูลหลัก › ช่องทางขาย เพื่อให้กำไรประมาณแม่นขึ้น</p>' : ''}</div>
+        <div class="full">${R.sec('เทียบกับไฟล์แพลตฟอร์ม', R.can('cashflow.manage') ? '<a class="link" href="#/import">นำเข้าไฟล์</a>' : '')}
+          ${cmp.some((x) => x.imported) ? R.table([{ l: 'วันที่ / แพลตฟอร์ม', f: (x) => `${R.date(x.date)}<br><span class="muted small">${esc(x.channel)}</span>` },
+            { l: 'ทีมลง', num: true, f: (x) => `${x.system_orders} · ${money(x.system_gross)}` }, { l: 'ในไฟล์', num: true, main: true, f: (x) => (x.imported ? `${x.file_orders} · ${money(x.file_gross)}` : '-') },
+            { l: 'หักจริง', num: true, f: (x) => (x.imported ? money(x.file_fees) : '-') },
+            { l: 'ผล', f: (x) => { const [t, l] = cmpState(x); return `<span class="pill ${t}">${l}</span>`; } }], cmpRows, { empty: 'ไม่มีออเดอร์ Delivery ในช่วงนี้' })
+          : `<div class="card flat"><p class="small" style="margin:0">นำเข้าไฟล์ออเดอร์จากแพลตฟอร์ม (Excel/CSV) เพื่อเทียบกับที่ทีมลง หาออเดอร์ที่ขาด และใช้ค่าคอมจริงคิดกำไร</p>${R.can('cashflow.manage') ? '<a class="btn small" href="#/import" style="margin-top:8px">ไปหน้านำเข้าข้อมูล</a>' : ''}</div>`}</div>
         <div class="full">${R.sec('รอบที่ยังไม่ได้บันทึกเงินเข้า (จันทร์–อาทิตย์)')}
           ${R.table([{ l: 'แพลตฟอร์ม / สัปดาห์', f: (w) => `${esc(w.channel)}<br><span class="muted small">${R.date(w.from)} – ${R.date(w.to)}</span>` },
             { l: 'ออเดอร์', num: true, k: 'orders' }, { l: 'ยอดในระบบ', num: true, f: (w) => money(w.gross) },

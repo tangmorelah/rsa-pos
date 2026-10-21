@@ -253,6 +253,14 @@ begin
     when 'dashboard'          then rsa__dashboard(u, p)
     when 'report.overview'    then rsa__report_overview(u, p)
     when 'report.sales'       then rsa__report_sales(u, p)
+    when 'import.preview'     then rsa__import_preview(u, p)
+    when 'import.commit'      then rsa__import_commit(u, p)
+    when 'import.list'        then rsa__import_list(u, p)
+    when 'import.orders'      then rsa__import_orders(u, p)
+    when 'import.cancel'      then rsa__import_cancel(u, p)
+    when 'import.add_orders'  then rsa__import_add_orders(u, p)
+    when 'import.compare'     then rsa__import_compare(u, p)
+    when 'alias.list'         then rsa__alias_list(u, p)
     when 'report.products'    then rsa__report_products(u, p)
     when 'report.delivery'    then rsa__report_delivery(u, p)
     when 'report.expenses'    then rsa__report_expenses(u, p)
@@ -285,7 +293,11 @@ create or replace function rsa_profit(p_from date, p_to date) returns jsonb lang
   with o as (
     select coalesce(sum(total - refunded), 0) revenue, coalesce(sum(cost_total), 0) cogs,
            bool_and(cost_complete) filter (where status <> 'cancelled') cost_complete,
-           coalesce(sum(est_fee) filter (where channel_kind = 'delivery' and settlement_id is null), 0) est_fee_unsettled
+           -- unsettled delivery: the platform's real fee when its file was imported, else the % estimate
+           coalesce(sum(coalesce((select po.commission + po.vat + po.other_fee from platform_orders po where po.matched_order_id = orders.id and po.status = 'done' limit 1), est_fee))
+             filter (where channel_kind = 'delivery' and settlement_id is null), 0) est_fee_unsettled,
+           count(*) filter (where channel_kind = 'delivery' and settlement_id is null
+             and not exists (select 1 from platform_orders po where po.matched_order_id = orders.id and po.status = 'done')) fee_guessed
       from orders where status <> 'cancelled' and biz_date between p_from and p_to),
   s as (select coalesce(sum(fee), 0) fee from delivery_settlements where status = 'done' and period_to between p_from and p_to),
   -- waste is a cost; staff meals are a welfare expense; goods the owner took are an owner drawing (not a shop cost)
@@ -311,7 +323,7 @@ create or replace function rsa_profit(p_from date, p_to date) returns jsonb lang
     'flags', jsonb_strip_nulls(jsonb_build_object(
        'cost', case when not coalesce(o.cost_complete, true) then 'มีสินค้าที่ยังไม่มีสูตรหรือต้นทุน' end,
        'fee', case when not coalesce(f.fees_confirmed, true) then 'ค่าธรรมเนียม Delivery ยังไม่ยืนยัน' end,
-       'fee_est', case when o.est_fee_unsettled > 0 then 'ค่าธรรมเนียมบางส่วนเป็นค่าประมาณ (ยังไม่ได้รับเงินจากแพลตฟอร์ม)' end,
+       'fee_est', case when o.fee_guessed > 0 then 'ค่าธรรมเนียมบางส่วนเป็นค่าประมาณ (ยังไม่ได้รับเงินหรือนำเข้าไฟล์แพลตฟอร์ม)' end,
        'count', case when exists (select 1 from stocktakes where status = 'pending') then 'มีการนับสต็อกรออนุมัติ' end,
        'pending', case when ep.pending_amount > 0 then 'มีค่าใช้จ่ายรออนุมัติที่ยังไม่นับรวม' end)))
   from o, s, w, k, e, ep, f
