@@ -56,7 +56,12 @@ begin
   perform rsa_need(u, 'cashflow.view');
   return (select jsonb_build_object('orders', count(*), 'system_gross', coalesce(sum(total - refunded), 0), 'est_fee', coalesce(sum(est_fee), 0),
             'staff_gross', rsa_staff_delivery_gross_open(rsa_uuid(p, 'channel_id'), rsa_date(p, 'from'), rsa_date(p, 'to')),
-            'fee_pct', (select fee_pct from channels where id = rsa_uuid(p, 'channel_id')))
+            'fee_pct', (select fee_pct from channels where id = rsa_uuid(p, 'channel_id')),
+            -- what the imported platform file says for the same days (fills the payout form)
+            'platform', (select case when count(*) > 0 then jsonb_build_object('orders', count(*), 'gross', sum(po.gross), 'discount', sum(po.shop_discount),
+                           'commission', sum(po.commission), 'vat', sum(po.vat), 'other', sum(po.other_fee)) end
+                         from platform_orders po where po.channel_id = rsa_uuid(p, 'channel_id') and po.status = 'done' and po.platform_status = 'completed'
+                           and po.biz_date between rsa_date(p, 'from') and rsa_date(p, 'to')))
             from orders where channel_id = rsa_uuid(p, 'channel_id') and status <> 'cancelled' and settlement_id is null
              and biz_date between rsa_date(p, 'from') and rsa_date(p, 'to'));
 end $$;

@@ -142,7 +142,7 @@
     const PUR = R.PURPOSE;
     el.innerHTML = `${R.sectTabs('cashflow')}<div class="card blue"><span class="muted small">เงินที่ใช้ได้ตอนนี้ (ทุกบัญชี)</span><span class="big-amt">${baht(total)}</span></div>
       ${R.list(x.accounts.map((a) => R.row({ data: { acc: a.id }, icon: a.is_drawer ? 'wallet' : 'receipt', t: esc(a.name),
-        s: a.is_drawer ? 'ลิ้นชักหน้าร้าน · นับตอนปิดยอด' : Number(a.unreconciled) ? `ยังไม่ตรวจกับ statement ${a.unreconciled} รายการ` : 'ตรวจกับ statement ครบ', v: baht(a.balance),
+        s: a.is_drawer ? 'เงินสดหน้าร้าน · นับตอนปิดยอด' : Number(a.unreconciled) ? `ยังไม่ตรวจกับ statement ${a.unreconciled} รายการ` : 'ตรวจกับ statement ครบ', v: baht(a.balance),
         pill: a.opening_confirmed ? '' : '<span class="pill warn">ยอดยกมายังไม่ยืนยัน</span>' })))}
       ${manage ? R.list([R.row({ data: { act: 'tr' }, icon: 'flow', t: 'โอนเงินระหว่างบัญชี', s: 'เช่น นำเงินสดหน้าร้านฝากธนาคาร' })]) : ''}
       ${R.sec('คาดการณ์เงินสด 7 / 14 / 30 วัน')}
@@ -369,5 +369,159 @@
       el.querySelector('#out').innerHTML = rows.length ? `${R.sec(rows.length + ' แถว (แสดง 20 แถวแรก)')}<div class="table-wrap"><table class="plain"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>
         ${rows.slice(0, 20).map((r) => `<tr>${cols.map((c) => `<td>${esc(typeof r[c] === 'object' && r[c] ? JSON.stringify(r[c]) : r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : R.empty('ไม่มีข้อมูลในช่วงนี้');
     }));
+  });
+
+  // ------------------------------------------------------------ import QR / transfer amounts and Delivery platform orders from a file
+  const IMP_KIND = { bank: 'ยอด QR / เงินโอนเข้าบัญชี', delivery: 'ออเดอร์ Delivery' };
+  const MATCH = { match: ['ok', 'ตรงกัน'], diff: ['warn', 'ยอดต่าง'], missing: ['bad', 'ไม่มีในระบบ'], cancelled: ['', 'ยกเลิกในแพลตฟอร์ม'], dup: ['', 'นำเข้าแล้ว'] };
+  const TEMPLATES = {
+    bank: { file: 'rsa-template-qr-transfer.csv', rows: [
+      { 'วันที่* (date)': 'ตัวอย่าง 20/10/2569', 'เวลา (time)': '', 'ยอดเงิน* (amount)': '3,450.00', 'เลขอ้างอิง (ref)': '', 'รายละเอียด (desc)': 'ยอดรวมทั้งวัน (ไม่ใส่เวลา)' },
+      { 'วันที่* (date)': 'ตัวอย่าง 2026-10-21', 'เวลา (time)': '13:05', 'ยอดเงิน* (amount)': '85', 'เลขอ้างอิง (ref)': '202610211305ABC', 'รายละเอียด (desc)': 'ทีละรายการ (แถวที่ขึ้นต้นว่า ตัวอย่าง ระบบข้ามให้)' }] },
+    delivery: { file: 'rsa-template-delivery-orders.csv', rows: [
+      { 'เลขออเดอร์* (order_id)': 'ตัวอย่าง-LM-1001', 'วันที่* (date)': '21/10/2569', 'เวลา (time)': '12:10', 'ชื่อสินค้า* (item)': 'ชาไทย', 'จำนวน* (qty)': '2', 'ยอดขายก่อนหัก* (gross)': '130', 'ส่วนลดที่ร้านออก (discount)': '10', 'ค่าคอม (commission)': '35.10', 'VAT ค่าคอม (vat)': '2.46', 'ค่าธรรมเนียมอื่น (other)': '', 'สถานะ (status)': 'completed' },
+      { 'เลขออเดอร์* (order_id)': 'ตัวอย่าง-LM-1001', 'วันที่* (date)': '21/10/2569', 'เวลา (time)': '12:10', 'ชื่อสินค้า* (item)': 'ขนมปังปิ้ง', 'จำนวน* (qty)': '1', 'ยอดขายก่อนหัก* (gross)': '45', 'ส่วนลดที่ร้านออก (discount)': '', 'ค่าคอม (commission)': '', 'VAT ค่าคอม (vat)': '', 'ค่าธรรมเนียมอื่น (other)': '', 'สถานะ (status)': '' }] },
+  };
+  // the platform orders of one import that the team did not record → add them to sales
+  R.importMissingSheet = async function (imp, done) {
+    const list = (await R.api('import.orders', { import_id: imp.id })).filter((x) => x.platform_status === 'completed' && !x.matched_order_id);
+    if (!list.length) { R.toast('ไม่มีออเดอร์ที่ต้องเพิ่ม'); return; }
+    const items = (x) => (x.items || []).map((i) => `${esc(i.name)} ×${qty(i.qty)}${i.product_id ? '' : ' (ข้าม)'}`).join(', ');
+    const m = R.modal('ออเดอร์ที่ไม่มีในระบบ (' + list.length + ')', `<p class="muted small">มีในไฟล์แพลตฟอร์มแต่ทีมไม่ได้ลง กดเพิ่มแล้วระบบสร้างออเดอร์ Delivery ตามเวลาในไฟล์ และตัดสต็อกตามสูตร</p>
+      ${R.list(list.map((x) => R.row({ static: true, icon: 'receipt', tone: 'warn', t: '#' + esc(x.external_id), s: `${R.date(x.biz_date)} ${R.time(x.ordered_at)} น. · ${items(x)}`,
+        v: money(Number(x.gross) - Number(x.shop_discount)), pill: `<button type="button" class="btn small primary" data-add="${x.id}">เพิ่ม</button>` })))}
+      <div class="btn-row" style="margin-top:12px"><button class="btn" type="button" data-close>ไว้ก่อน</button><button class="btn primary lg" id="all">เพิ่มทั้งหมด ${list.length} ออเดอร์</button></div>`, { wide: true });
+    const add = (btn, ids) => R.busy(btn, async () => {
+      const r = await R.api('import.add_orders', { ids });
+      R.toast(`เพิ่มเข้ายอดขาย ${r.added} ออเดอร์${r.skipped_no_product.length ? ` · ข้าม ${r.skipped_no_product.length} (ไม่มีสินค้าของร้าน)` : ''}`);
+      m.close(); done && done();
+    });
+    m.el.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => add(b, [b.dataset.add])));
+    on(m.el.querySelector('#all'), (ev) => add(ev.currentTarget, list.map((x) => x.id)));
+  };
+
+  R.def('import', { title: 'นำเข้าข้อมูล', back: 'more' }, async function (el) {
+    const banks = B().accounts.filter((a) => a.kind !== 'cash' && !a.is_drawer && a.active !== false);
+    const chans = B().channels.filter((c) => c.kind === 'delivery' && c.active !== false);
+    const prods = B().products.filter((p) => p.active !== false);
+    let kind = R.store.get('import.kind') === 'delivery' ? 'delivery' : 'bank', rows = null, fileName = '', aliases = {}, pv = null;
+    el.innerHTML = `<form class="form" id="f" onsubmit="return false">
+      <div class="field"><span>นำเข้าอะไร</span>${R.seg('ikind', Object.entries(IMP_KIND), kind)}</div>
+      <div class="field" id="tg"></div>
+      <div class="card flat"><b>1. ดาวน์โหลดเทมเพลต</b>
+        <p class="muted small" id="tdesc"></p>
+        <button type="button" class="btn" id="tpl">${R.icon('download')} ดาวน์โหลดเทมเพลต</button><span class="muted small">ไฟล์ .csv เปิดและกรอกใน Excel หรือ Google Sheets ได้</span></div>
+      <div class="card flat"><b>2. อัปโหลดไฟล์ที่กรอกแล้ว</b>
+        <p class="muted small">รับไฟล์ .xlsx หรือ .csv · ใช้ไฟล์ที่ส่งออกจากแอปธนาคาร/แพลตฟอร์มได้ ถ้าหัวคอลัมน์ตรงกับเทมเพลต · วันที่ใช้ได้ทั้ง 2026-10-21, 21/10/2026 และปี พ.ศ.</p>
+        <label class="btn primary" style="position:relative;overflow:hidden">${R.icon('plus')} เลือกไฟล์<input type="file" id="file" accept=".csv,.xlsx,.xls,text/csv" style="position:absolute;inset:0;opacity:0"></label>
+        <span class="muted small" id="fname"></span></div></form>
+      <div id="pv"></div>
+      ${R.sec('ประวัติการนำเข้า')}<div id="hist"></div>
+      <p class="muted small" style="padding:0 4px">ยกเลิกรอบนำเข้าได้ ระบบไม่ลบข้อมูลจริง · การเชื่อมต่อกับแพลตฟอร์มโดยตรง (API) จะมาในเฟสถัดไป</p>`;
+    const f = el.querySelector('#f'), out = el.querySelector('#pv');
+    const target = () => R.segVal(f, 'itg');
+    const drawTarget = () => {
+      const list = kind === 'bank' ? banks : chans;
+      f.querySelector('#tg').innerHTML = list.length ? `<span>${kind === 'bank' ? 'เข้าบัญชี' : 'แพลตฟอร์ม'}</span>${R.seg('itg', list.map((x) => [x.id, x.name]), list[0].id, 'wrap')}`
+        : `<div class="note">${kind === 'bank' ? 'ยังไม่มีบัญชีธนาคาร เพิ่มที่ ข้อมูลหลัก › บัญชีเงิน' : 'ยังไม่มีช่องทาง Delivery เพิ่มที่ ข้อมูลหลัก › ช่องทางขาย'}</div>`;
+      f.querySelector('#tdesc').innerHTML = kind === 'bank'
+        ? 'คอลัมน์: วันที่*, เวลา, ยอดเงิน*, เลขอ้างอิง, รายละเอียด · ไม่ใส่เวลา = ยอดรวมทั้งวัน · ใส่เวลา = ทีละรายการ · รายการซ้ำ (เลขอ้างอิงเดิม หรือวัน เวลา ยอดเดิม) ระบบข้ามให้'
+        : 'คอลัมน์: เลขออเดอร์*, วันที่*, เวลา, ชื่อสินค้า*, จำนวน*, ยอดขายก่อนหัก*, ส่วนลดที่ร้านออก, ค่าคอม, VAT ค่าคอม, ค่าธรรมเนียมอื่น, สถานะ · 1 แถว = 1 สินค้า ออเดอร์เดียวกันใช้เลขเดียวกัน · ค่าคอมใส่แถวแรกของออเดอร์ก็พอ';
+    };
+    const payload = (extra) => ({ kind, rows, file_name: fileName, aliases, [kind === 'bank' ? 'account_id' : 'channel_id']: target(), ...(extra || {}) });
+
+    function drawBank(v) {
+      const okN = v.ok, rowsErr = v.rows.filter((x) => x.error);
+      out.innerHTML = `${R.sec('ตรวจไฟล์ ' + esc(fileName))}
+        <div class="card"><div class="chips" style="flex-wrap:wrap"><span class="pill ok">พร้อมบันทึก ${okN}</span>${v.dups ? `<span class="pill">ซ้ำ ข้าม ${v.dups}</span>` : ''}${v.errors ? `<span class="pill bad">อ่านไม่ได้ ${v.errors}</span>` : ''}</div>
+          ${rowsErr.length ? `<ul class="small" style="margin:8px 0 0;padding-left:18px">${rowsErr.slice(0, 10).map((x) => `<li>แถว ${x.n + 1}: ${esc(x.error)}</li>`).join('')}</ul>` : ''}</div>
+        ${R.sec('เทียบรายวัน: ทีมลง QR/โอน กับยอดในไฟล์')}
+        ${R.table([{ l: 'วันที่', f: (d) => R.date(d.date) }, { l: 'ทีมลงในระบบ', num: true, f: (d) => money(d.system) }, { l: 'ในไฟล์', num: true, main: true, f: (d) => money(d.file) },
+          { l: 'ต่าง', num: true, f: (d) => { const df = Number(d.file) - Number(d.system); return Math.abs(df) > 0.009 ? `<span class="pill warn">${signed(df)}</span>` : '<span class="pill ok">ตรง</span>'; } },
+          { l: 'นำเข้าไว้ก่อนแล้ว', num: true, f: (d) => (Number(d.already) ? money(d.already) : '-') }], v.days, { empty: 'ไม่มีแถวที่อ่านได้' })}
+        <p class="muted small" style="padding:0 4px">ยอดต่าง = ทีมอาจลงช่องทางผิด (เงินสด/QR) หรือลืมลง ตรวจได้ที่ รายการขาย · บันทึกแล้วไปจับคู่กับรายการในระบบต่อที่ บัญชีเงิน / ภาษี</p>
+        ${okN ? `<button class="btn primary lg" id="commit" style="width:100%;margin:8px 0">บันทึก ${okN} รายการเข้าบัญชี</button>` : ''}`;
+    }
+    function drawDelivery(v) {
+      const c = v.counts || {}, unm = v.unmapped || [];
+      const items = (o) => o.items.map((i) => `${esc(i.name)} ×${qty(i.qty)}${i.product_id ? '' : unm.includes(i.name) ? ' <span class="pill warn">?</span>' : ' <span class="muted">(ข้าม)</span>'}`).join(', ');
+      const ready = (v.orders || []).filter((o) => o.kind !== 'dup').length;
+      out.innerHTML = `${R.sec('ตรวจไฟล์ ' + esc(fileName))}
+        ${unm.length ? `<div class="card"><b>จับคู่ชื่อสินค้า ${unm.length} ชื่อ</b><p class="muted small">ชื่อในไฟล์ไม่ตรงกับสินค้าในระบบ เลือกครั้งเดียว ครั้งหน้าระบบจำให้</p>
+          <div class="form" style="gap:8px">${unm.map((n, i) => `<label class="field"><span>${esc(n)}</span><select data-al="${i}"><option value="">— เลือกสินค้า —</option>${R.opts(prods, aliases[n])}<option value="skip" ${aliases[n] === 'skip' ? 'selected' : ''}>ไม่ใช่สินค้าของร้าน (ข้าม)</option></select></label>`).join('')}</div>
+          <button class="btn primary" id="remap" style="margin-top:10px">ตรวจอีกครั้ง</button></div>` : ''}
+        <div class="card"><div class="chips" style="flex-wrap:wrap">${Object.entries(MATCH).filter(([k]) => c[k]).map(([k, [tone, l]]) => `<span class="pill ${tone}">${l} ${c[k]}</span>`).join('')}
+          ${v.staff_only.length ? `<span class="pill warn">ทีมลงแต่ไม่มีในไฟล์ ${v.staff_only.length}</span>` : ''}${v.errors.length ? `<span class="pill bad">อ่านไม่ได้ ${v.errors.length} แถว</span>` : ''}</div>
+          ${v.errors.length ? `<ul class="small" style="margin:8px 0 0;padding-left:18px">${v.errors.slice(0, 10).map((x) => `<li>แถว ${x.n + 1}: ${esc(x.error)}</li>`).join('')}</ul>` : ''}</div>
+        ${R.sec('รายวัน: ทีมลง กับ ไฟล์แพลตฟอร์ม')}
+        ${R.table([{ l: 'วันที่', f: (d) => R.date(d.date) }, { l: 'ออเดอร์ ทีม / ไฟล์', num: true, f: (d) => `${d.system_orders} / ${d.file_orders}` },
+          { l: 'ทีมลง', num: true, f: (d) => money(d.system_gross) }, { l: 'ในไฟล์', num: true, main: true, f: (d) => money(d.file_gross) },
+          { l: 'ต่าง', num: true, f: (d) => { const df = Number(d.file_gross) - Number(d.system_gross); return Math.abs(df) > 0.009 ? `<span class="pill warn">${signed(df)}</span>` : '<span class="pill ok">ตรง</span>'; } }], v.days, { empty: 'ไม่มีออเดอร์ที่อ่านได้' })}
+        ${R.sec('ออเดอร์ในไฟล์ (' + v.orders.length + ')')}
+        ${R.table([{ l: 'เลขออเดอร์', f: (o) => `#${esc(o.ext)}<br><span class="muted small">${R.date(o.date)} ${o.time || ''}</span>` }, { l: 'รายการ', f: items },
+          { l: 'ยอดลูกค้าจ่าย', num: true, main: true, f: (o) => money(o.net) }, { l: 'หักแพลตฟอร์ม', num: true, f: (o) => money(Number(o.commission) + Number(o.vat) + Number(o.other)) },
+          { l: 'ในระบบ', f: (o) => (o.order_no ? `${esc(o.order_no)} · ${money(o.order_total)}` : '-') },
+          { l: 'ผล', f: (o) => `<span class="pill ${MATCH[o.kind][0]}">${MATCH[o.kind][1]}</span>` }], v.orders, { empty: 'ไม่มีออเดอร์' })}
+        ${v.staff_only.length ? `${R.sec('ทีมลงแต่ไม่มีในไฟล์ (' + v.staff_only.length + ')')}
+          ${R.list(v.staff_only.map((s) => R.row({ href: '#/orders', icon: 'receipt', tone: 'warn', t: esc(s.order_no), s: `${R.date(s.date)} ${s.time} น.${s.note ? ' · ' + esc(s.note) : ''}`, v: money(s.total) })))}
+          <p class="muted small" style="padding:0 4px">อาจลงช่องทางผิดหรือลงซ้ำ ตรวจแล้วยกเลิกเองได้ที่ออเดอร์นั้น ระบบไม่ยกเลิกให้อัตโนมัติ</p>` : ''}
+        ${ready ? `<button class="btn primary lg" id="commit" style="width:100%;margin:8px 0" ${unm.length ? 'disabled' : ''}>${unm.length ? 'จับคู่ชื่อสินค้าให้ครบก่อน' : `บันทึก ${ready} ออเดอร์จากไฟล์`}</button>` : ''}
+        <p class="muted small" style="padding:0 4px">บันทึกแล้ว ค่าคอมและค่าธรรมเนียมจริงใช้คำนวณกำไรแทนค่าประมาณ และเติมให้ตอนบันทึกเงินเข้า Delivery ออเดอร์ที่ไม่มีในระบบกดเพิ่มเข้ายอดขายได้ในขั้นถัดไป</p>`;
+      out.querySelectorAll('[data-al]').forEach((s) => s.addEventListener('change', () => { const n = unm[Number(s.dataset.al)]; if (s.value) aliases[n] = s.value; else delete aliases[n]; }));
+      on(out.querySelector('#remap'), (ev) => R.busy(ev.currentTarget, check));
+    }
+    async function check() {
+      if (!rows) return;
+      if (!target()) throw new Error(kind === 'bank' ? 'กรุณาเลือกบัญชีที่รับเงิน' : 'กรุณาเลือกแพลตฟอร์ม');
+      pv = await R.api('import.preview', payload());
+      (kind === 'bank' ? drawBank : drawDelivery)(pv);
+      on(out.querySelector('#commit'), (ev) => R.busy(ev.currentTarget, async () => {
+        const r = await R.api('import.commit', payload());
+        rows = null; aliases = {}; f.querySelector('#file').value = ''; f.querySelector('#fname').textContent = '';
+        out.innerHTML = `<div class="banner ok"><span class="dot"></span><span>บันทึกแล้ว ${r.added} ${kind === 'bank' ? 'รายการ' : 'ออเดอร์'} จาก ${esc(fileName)}</span></div>`;
+        R.toast('นำเข้าเรียบร้อย');
+        await hist();
+        if (kind === 'delivery' && (r.counts || {}).missing) R.importMissingSheet({ id: r.import_id }, () => hist().catch(R.fail));
+      }));
+    }
+    async function hist() {
+      const list = await R.api('import.list', {}), box = el.querySelector('#hist');
+      box.innerHTML = R.list(list.map((b) => R.row({ data: { im: b.id }, off: b.status === 'cancelled', icon: b.kind === 'bank' ? 'receipt' : 'flow', tone: b.missing ? 'warn' : '',
+        t: `${IMP_KIND[b.kind]} · ${esc(b.target || '')}`, s: `${R.date(b.created_at)} ${R.time(b.created_at)} น. · ${esc(b.by || '')} · ${esc(b.file_name || '')}${b.status === 'cancelled' ? ' · ยกเลิกแล้ว' : b.missing ? ` · ไม่มีในระบบ ${b.missing} ออเดอร์` : ''}`,
+        v: b.rows_added + (b.kind === 'bank' ? ' รายการ' : ' ออเดอร์'), vs: b.rows_skipped ? 'ข้าม ' + b.rows_skipped : '' })), 'ยังไม่เคยนำเข้า');
+      box.querySelectorAll('[data-im]').forEach((r) => r.addEventListener('click', () => {
+        const b = list.find((x) => x.id === r.dataset.im);
+        const m = R.modal(IMP_KIND[b.kind], `${R.mlist([['', [R.mrow(b.kind === 'bank' ? 'บัญชี' : 'แพลตฟอร์ม', esc(b.target || '')), R.mrow('ไฟล์', esc(b.file_name || '-')),
+            R.mrow('นำเข้าเมื่อ', `${R.date(b.created_at)} ${R.time(b.created_at)} น.`, { sub: esc(b.by || '') }), R.mrow('บันทึก', String(b.rows_added), { sub: b.rows_skipped ? 'ข้าม ' + b.rows_skipped + ' (ซ้ำหรืออ่านไม่ได้)' : '' }),
+            ...(b.status === 'cancelled' ? [R.mrow('ยกเลิกแล้ว', '', { sub: esc(b.cancel_reason || '') })] : [])]]])}
+          <div class="btn-row" style="margin-top:12px">${b.status === 'done' && R.can('cashflow.manage') ? '<button class="btn danger" id="cx">ยกเลิกรอบนี้</button>' : ''}
+            ${b.missing && b.status === 'done' && R.can('cashflow.manage') ? `<button class="btn primary" id="miss">เพิ่ม ${b.missing} ออเดอร์เข้ายอดขาย</button>` : ''}</div>`);
+        on(m.el.querySelector('#miss'), () => { m.close(); R.importMissingSheet(b, () => hist().catch(R.fail)).catch(R.fail); });
+        on(m.el.querySelector('#cx'), async () => {
+          m.close();
+          const x = await R.askReason('ยกเลิกรอบนำเข้า', { text: 'รายการจากไฟล์นี้จะไม่ถูกนับ ระบบไม่ลบข้อมูลจริง · ออเดอร์ที่เพิ่มเข้ายอดขายไปแล้วยังอยู่ ยกเลิกได้ที่ออเดอร์นั้น', danger: true, ok: 'ยกเลิกรอบนี้' });
+          if (!x) return;
+          try { await R.api('import.cancel', { import_id: b.id, reason: x.reason }); R.toast('ยกเลิกรอบนำเข้าแล้ว'); await hist(); } catch (e) { R.fail(e); }
+        });
+      }));
+    }
+    drawTarget();
+    f.querySelector('[name=ikind]').closest('.seg').addEventListener('change', () => {
+      kind = R.segVal(f, 'ikind'); R.store.set('import.kind', kind); drawTarget(); rows = null; pv = null; aliases = {}; out.innerHTML = '';
+      f.querySelector('#file').value = ''; f.querySelector('#fname').textContent = '';
+    });
+    f.querySelector('#tg').addEventListener('change', () => { if (rows) check().catch(R.fail); });
+    on(f.querySelector('#tpl'), () => R.downloadCsv(TEMPLATES[kind].file, TEMPLATES[kind].rows));
+    f.querySelector('#file').addEventListener('change', async (ev) => {
+      const file = ev.target.files[0]; if (!file) return;
+      fileName = file.name; f.querySelector('#fname').textContent = file.name; aliases = {};
+      out.innerHTML = '<div class="empty">กำลังอ่านไฟล์…</div>';
+      try {
+        const m = R.mapRows(await R.readSheet(file), kind);
+        if (!m.rows.length) { rows = null; out.innerHTML = `<div class="note">${m.missing.length ? 'ไม่พบหัวคอลัมน์ที่ต้องมี ใช้หัวคอลัมน์ตามเทมเพลต (เช่น ' + esc(TEMPLATES[kind].rows[0] ? Object.keys(TEMPLATES[kind].rows[0]).filter((k) => k.includes('*')).join(', ') : '') + ')' : 'ไฟล์ไม่มีข้อมูล'}</div>`; return; }
+        rows = m.rows; await check();
+      } catch (e) { out.innerHTML = ''; R.fail(e); }
+    });
+    await hist();
   });
 })();

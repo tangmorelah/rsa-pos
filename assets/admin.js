@@ -34,9 +34,9 @@
       row: (r) => ({ t: esc(r.name), s: r.kind === 'delivery' ? `ค่าธรรมเนียม ${r.fee_pct}%${r.fee_confirmed ? '' : ' (ยังไม่ยืนยัน)'} · โอนภายใน ${r.settlement_days} วัน` : 'หน้าร้าน', v: '' }) },
     payment_accounts: { t: 'บัญชีเงิน', icon: 'wallet', fields: [
       ['name', 'ชื่อบัญชี', 'text', { req: true }], ['kind', 'ประเภท', 'seg', { o: [['cash', 'เงินสด'], ['bank', 'ธนาคาร'], ['ewallet', 'e-Wallet']] }],
-      ['is_drawer', 'เป็นลิ้นชักเงินสดหน้าร้าน (มีได้ 1 บัญชี)', 'bool'], ['opening_balance', 'ยอดยกมา ณ วันเริ่มใช้ระบบ', 'number'], ['opening_confirmed', 'ยืนยันยอดยกมาแล้ว', 'bool'],
+      ['is_drawer', 'เป็นเงินสดหน้าร้าน (ลิ้นชัก มีได้ 1 บัญชี)', 'bool'], ['opening_balance', 'ยอดยกมา ณ วันเริ่มใช้ระบบ', 'number'], ['opening_confirmed', 'ยืนยันยอดยกมาแล้ว', 'bool'],
       ['bank_detail', 'เลขบัญชี / QR (เห็นเฉพาะเจ้าของร้าน)', 'text']],
-      row: (r) => ({ t: esc(r.name), s: `ยอดยกมา ${money(r.opening_balance)}${r.opening_confirmed ? '' : ' · ยังไม่ยืนยัน'}${r.is_drawer ? ' · ลิ้นชักหน้าร้าน' : ''}`, v: '' }) },
+      row: (r) => ({ t: esc(r.name), s: `ยอดยกมา ${money(r.opening_balance)}${r.opening_confirmed ? '' : ' · ยังไม่ยืนยัน'}${r.is_drawer ? ' · เงินสดหน้าร้าน' : ''}`, v: '' }) },
     suppliers: { t: 'ซัพพลายเออร์', icon: 'users', fields: [
       ['name', 'ชื่อร้าน / ซัพพลายเออร์', 'text', { req: true }], ['contact_name', 'ผู้ติดต่อ', 'text'], ['phone', 'โทรศัพท์', 'text'], ['line_id', 'LINE', 'text'],
       ['supplies', 'ส่งอะไรให้ร้าน', 'text'], ['order_days', 'วันที่สั่งของ', 'text'], ['lead_time', 'ส่งของภายใน', 'text'], ['delivery_schedule', 'รอบส่งของ', 'text'],

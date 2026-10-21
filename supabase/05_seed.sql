@@ -13,7 +13,7 @@ insert into units(name) values ('ชิ้น'), ('กล่อง'), ('แก�
 on conflict (name) do nothing;
 
 insert into payment_accounts(name, kind, is_drawer, opening_balance, opening_confirmed)
-select 'ลิ้นชักเงินสดหน้าร้าน', 'cash', true, 0, false
+select 'เงินสดหน้าร้าน', 'cash', true, 0, false
 where not exists (select 1 from payment_accounts where is_drawer);
 
 insert into payment_accounts(name, kind, is_drawer, opening_balance, opening_confirmed)

@@ -238,6 +238,86 @@
     return window.Tesseract;
   };
 
+  // ------------------------------------------------------------ import files (.csv / .xlsx) → rows keyed by our column names
+  R.loadXlsx = async function () {
+    if (window.XLSX) return window.XLSX;
+    await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = res; s.onerror = () => rej(new Error('โหลดตัวอ่าน Excel ไม่สำเร็จ ลองบันทึกไฟล์เป็น CSV แล้วอัปโหลดใหม่')); document.head.appendChild(s); });
+    return window.XLSX;
+  };
+  R.parseCsv = function (text) {
+    text = String(text || '').replace(/^﻿/, '');
+    const sep = (text.split(/\r?\n/)[0].match(/;/g) || []).length > (text.split(/\r?\n/)[0].match(/,/g) || []).length ? ';' : text.split(/\r?\n/)[0].includes('\t') && !text.split(/\r?\n/)[0].includes(',') ? '\t' : ',';
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+      else if (c === '"') q = true;
+      else if (c === sep) { row.push(cell); cell = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += c;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter((r) => r.some((x) => String(x).trim() !== ''));
+  };
+  const pad = (n) => String(n).padStart(2, '0');
+  // a file → array of arrays of strings (Excel dates become YYYY-MM-DD, times HH:MM)
+  R.readSheet = async function (file) {
+    if (/\.(xlsx|xls)$/i.test(file.name)) {
+      const X = await R.loadXlsx();
+      // date cells are read from Excel's day number, not as JS dates (those come out a day early in Thai time)
+      const wb = X.read(await file.arrayBuffer(), { type: 'array', cellNF: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws || !ws['!ref']) return [];
+      const rg = X.utils.decode_range(ws['!ref']), out = [];
+      for (let r = rg.s.r; r <= rg.e.r; r++) {
+        const row = [];
+        for (let c = rg.s.c; c <= rg.e.c; c++) {
+          const cell = ws[X.utils.encode_cell({ r, c })];
+          if (!cell || cell.v == null) { row.push(''); continue; }
+          if (cell.t === 'n' && cell.z && X.SSF.is_date(cell.z)) {
+            const d = X.SSF.parse_date_code(cell.v), t = pad(d.H) + ':' + pad(d.M);
+            row.push(cell.v < 1 ? t : `${d.y}-${pad(d.m)}-${pad(d.d)}` + (t !== '00:00' ? ' ' + t : ''));
+          } else row.push(cell.t === 'd' ? String(cell.w || cell.v) : String(cell.v));
+        }
+        out.push(row);
+      }
+      return out.filter((r) => r.some((x) => x.trim() !== ''));
+    }
+    const buf = await file.arrayBuffer();
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('windows-874').decode(buf); } // Thai bank files are often TIS-620
+    return R.parseCsv(text);
+  };
+  // header text → our key. Template headers look like "วันที่* (date)"; files from other systems use their own names.
+  R.IMPORT_COLS = {
+    bank: { date: ['วันที่', 'วันที่ทำรายการ', 'date', 'transaction date', 'วันที่รายการ'], time: ['เวลา', 'time'], amount: ['ยอดเงิน', 'จำนวนเงิน', 'ยอด', 'เงินเข้า', 'amount', 'credit', 'deposit'],
+      ref: ['เลขอ้างอิง', 'เลขที่รายการ', 'รหัสอ้างอิง', 'ref', 'reference', 'transaction id'], desc: ['รายละเอียด', 'หมายเหตุ', 'description', 'desc', 'note'] },
+    delivery: { order_id: ['เลขออเดอร์', 'หมายเลขคำสั่งซื้อ', 'เลขที่ออเดอร์', 'order id', 'order no', 'order_id', 'booking id'], date: ['วันที่', 'date', 'order date'], time: ['เวลา', 'time'],
+      item: ['ชื่อสินค้า', 'สินค้า', 'เมนู', 'item', 'menu', 'product'], qty: ['จำนวน', 'qty', 'quantity'], gross: ['ยอดขายก่อนหัก', 'ยอดขาย', 'ราคา', 'gross', 'price', 'subtotal'],
+      discount: ['ส่วนลดที่ร้านออก', 'ส่วนลด', 'discount', 'shop discount'], commission: ['ค่าคอม', 'ค่าคอมมิชชัน', 'gp', 'commission'], vat: ['vat ค่าคอม', 'vat'],
+      other: ['ค่าธรรมเนียมอื่น', 'other', 'other fee'], status: ['สถานะ', 'status'] },
+  };
+  R.mapRows = function (table, kind) {
+    const spec = R.IMPORT_COLS[kind], keys = Object.keys(spec);
+    const norm = (h) => String(h || '').toLowerCase().replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+    const keyOf = (h) => {
+      const n = norm(h), par = (n.match(/\(([a-z_]+)\)/) || [])[1];
+      if (par && keys.includes(par)) return par;
+      const bare = n.replace(/\(.*?\)/g, '').trim();
+      return keys.find((k) => spec[k].includes(bare) || spec[k].includes(n)) || null;
+    };
+    const need = kind === 'bank' ? ['date', 'amount'] : ['order_id', 'date', 'item', 'qty', 'gross'];
+    for (let h = 0; h < Math.min(15, table.length); h++) {
+      const map = table[h].map(keyOf);
+      if (!need.every((k) => map.includes(k))) continue;
+      const rows = table.slice(h + 1).map((r) => { const o = {}; map.forEach((k, i) => { if (k && o[k] == null) o[k] = String(r[i] == null ? '' : r[i]).trim(); }); return o; });
+      // a date cell that also holds the time (Excel) fills the time column when it is empty
+      rows.forEach((o) => { const m = String(o.date || '').match(/^(\S+)\s+(\d{1,2}:\d{2})/); if (m) { o.date = m[1]; if (!o.time) o.time = m[2]; } });
+      return { rows, missing: [] };
+    }
+    return { rows: [], missing: need };
+  };
+
   // ------------------------------------------------------------ polite reminders before the daily close
   const hhmm = () => { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
   R.reminderState = () => {

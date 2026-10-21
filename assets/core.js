@@ -398,6 +398,7 @@
       { r: 'cashflow', perm: 'cashflow.view', icon: 'flow', t: 'เงินสด / Cashflow' },
       { r: 'expenses', perm: 'expense.view_all', icon: 'wallet', t: 'ค่าใช้จ่าย' },
       { r: 'accounts', perm: 'cashflow.view', icon: 'receipt', t: 'บัญชีเงิน / ภาษี' },
+      { r: 'import', perm: 'cashflow.manage', icon: 'plus', t: 'นำเข้าข้อมูล QR / Delivery' },
       { r: 'export', perm: 'export.run', icon: 'download', t: 'ส่งออกให้นักบัญชี' },
       { r: 'invest', perm: 'cashflow.view', icon: 'chart', t: 'เงินลงทุน / คืนทุน' },
     ] },

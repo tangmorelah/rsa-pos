@@ -152,7 +152,7 @@ begin
   values (v_id, v_no, case when v_edit_of is null then nullif(p->>'client_ref', '') end, v_date, v_at, v_ch.id, v_ch.name, v_ch.kind, v_ch.payment_method,
           case when v_ch.kind = 'storefront' then v_ch.account_id end, 0, 0, v_ch.fee_pct,
           nullif(concat_ws(' · ', nullif(trim(p->>'note'), ''),
-            case when v_edit_of is null and v_at < now() - interval '1 minute'
+            case when v_edit_of is null and v_edit_at is null and v_at < now() - interval '1 minute'
                  then 'บันทึกตอนไม่มีสัญญาณ ส่งเข้าระบบ ' || to_char(now() at time zone 'Asia/Bangkok', 'DD/MM HH24:MI') end), ''),
           u.id, v_edit_of);
 
