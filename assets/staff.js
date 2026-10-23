@@ -511,9 +511,9 @@
         <div class="card">
           <label class="field"><span>จำนวนเงิน (บาท)</span><input type="number" id="amt" min="0.01" step="0.01" inputmode="decimal" class="input-amt" placeholder="0.00" required></label>
           <label class="field"><span>จ่ายค่าอะไร</span><input type="text" id="desc" required placeholder="เช่น น้ำแข็ง 2 ถุง"></label>
-          <label class="field"><span>หมวด</span><select id="cat" required>${R.opts(cats)}</select></label>
+          <label class="field"><span>หมวด</span><select id="cat" required>${R.catOptions(cats)}</select></label>
           <div id="catx"></div>
-          ${fundBlock('fund')}
+          <div id="fundwrap" class="form" style="gap:inherit">${fundBlock('fund')}</div>
           <details><summary>จ่ายให้ใคร วันเวลา เลขที่เอกสาร</summary><div class="form" style="margin-top:10px">
             <label class="field"><span>จ่ายให้ (ร้าน / บุคคล)</span><input type="text" id="payee"></label>
             <label class="field"><span>วันเวลาที่จ่าย</span><input type="datetime-local" id="at" value="${R.nowLocal()}"></label>
@@ -531,7 +531,16 @@
       if (c.name === 'ค่าจ้างพนักงาน') box.innerHTML = `<div class="note info">ค่าจ้างรายสัปดาห์ให้จ่ายจากวันทำงานที่ระบบนับให้ ไม่ต้องนับเอง${R.can('expense.pay') ? ' <a href="#/staff">ไปหน้าพนักงาน › จ่ายค่าจ้าง</a>' : ''}</div>`;
       else if (c.tax_category === 'เงินเบิกล่วงหน้าพนักงาน') box.innerHTML = `<label class="field"><span class="req">พนักงานที่เบิก</span><select id="advu"><option value="">เลือก…</option>${R.opts(B().users.filter((x) => x.role !== 'admin'), null, 'display_name')}</select></label>
         <p class="muted small">เงินเบิกจะถูกหักอัตโนมัติตอนจ่ายค่าจ้างรอบถัดไป</p>`;
-      else box.innerHTML = '';
+      else if (R.isNotCost(c)) {
+        // group C is not a cost: it is saved where it belongs (debt, capital, investment, drawing), never in profit
+        const accs = B().accounts.filter((a) => a.active !== false);
+        box.innerHTML = `<div class="note info"><b>${esc(c.name)} ไม่ใช่ค่าใช้จ่าย</b> ไม่นับในกำไร ${c.c_kind === 'loan_repayment' ? 'ระบบลดยอดหนี้คงเหลือ และตัดเงินจากบัญชีที่เลือก'
+          : c.c_kind === 'capital_in' ? 'ระบบบันทึกเป็นทุนของเจ้าของ เงินเข้าบัญชีที่เลือก' : c.c_kind === 'investment_item' ? 'ระบบบันทึกเป็นเงินลงทุน (ค่าเซ้ง / อุปกรณ์) ใช้คิดระยะคืนทุน'
+          : 'ถอนกำไรต้องประกาศใช้กำไรก่อน ที่หน้า เงิน'}</div>
+          ${['loan_repayment', 'capital_in'].includes(c.c_kind) ? `<div class="field"><span>${c.c_kind === 'loan_repayment' ? 'จ่ายจากบัญชี' : 'เงินเข้าบัญชี'}</span>${R.seg('cacc', accs.map((a) => [a.id, a.name]), (accs.find((a) => !a.is_drawer) || accs[0] || {}).id, 'wrap')}</div>` : ''}`;
+      } else box.innerHTML = '';
+      f.querySelector('#fundwrap').hidden = R.isNotCost(c);
+      document.getElementById('save').textContent = R.isNotCost(c) ? (c.c_kind === 'owner_draw' ? 'ไปประกาศใช้กำไร' : 'บันทึกที่หน้าเงิน') : 'บันทึกค่าใช้จ่าย';
     };
     f.querySelector('#cat').addEventListener('change', catx); catx();
     let ocrData = null, lastImage = null;
@@ -550,6 +559,16 @@
       f.querySelector('#ocr-note').hidden = false;
     }));
     document.getElementById('save').addEventListener('click', (ev) => R.busy(ev.currentTarget, async () => {
+      const cc = cats.find((x) => x.id === R.val(f, '#cat'));
+      if (R.isNotCost(cc)) {
+        if (cc.c_kind === 'owner_draw') { R.toast('ถอนกำไร: ประกาศใช้กำไรก่อน แล้วระบบจ่ายเงินออกให้'); location.hash = '#/cashflow'; return; }
+        if (!(Number(R.val(f, '#amt')) > 0)) throw new Error('จำนวนเงินต้องมากกว่า 0');
+        const c = await R.api('capital.create', { kind: cc.c_kind, amount: R.val(f, '#amt'), occurred_at: R.toIso(R.val(f, '#at')), account_id: R.segVal(f, 'cacc'),
+          party: R.val(f, '#payee') || (cc.c_kind === 'loan_repayment' ? 'เจ้าหนี้' : 'เจ้าของ'), category: R.val(f, '#desc') || cc.name, note: R.val(f, '#desc') || null });
+        success(el, { title: 'บันทึก' + cc.name + 'แล้ว', sub: `${baht(c.amount || R.val(f, '#amt'))} · ไม่นับเป็นค่าใช้จ่ายในกำไร`,
+          actions: [{ label: 'ดูหน้าเงิน', href: '#/cashflow' }, { label: 'บันทึกอีกรายการ', href: '#/expense', primary: true }] });
+        return;
+      }
       if (!f.reportValidity()) return;
       if (ocrData && !R.val(f, '#ocr-ok')) throw new Error('ตรวจข้อมูลที่อ่านจากรูป แล้วติ๊ก "ตรวจแล้ว ถูกต้อง"');
       const fv = fundValue(f, 'fund');

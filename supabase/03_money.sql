@@ -30,6 +30,8 @@ begin
         and (nullif(p->>'from', '') is null or rsa_bdate(e0.occurred_at) >= (p->>'from')::date)
         and (nullif(p->>'to', '') is null or rsa_bdate(e0.occurred_at) <= (p->>'to')::date)
         and (not coalesce((p->>'unreviewed')::boolean, false) or (e0.status = 'จ่ายแล้ว' and not e0.reviewed))
+        and (nullif(p->>'category_id', '') is null or e0.category_id = (p->>'category_id')::uuid
+             or e0.category_id in (select id from expense_categories where parent_id = (p->>'category_id')::uuid))
       order by e0.occurred_at desc limit 300) e);
 end $$;
 
@@ -561,7 +563,9 @@ begin
         'capital_in', coalesce(sum(amount) filter (where kind = 'capital_in'), 0),
         'loan_in', coalesce(sum(amount) filter (where kind = 'loan_in'), 0),
         'capital_returned', coalesce(sum(amount) filter (where kind = 'capital_return'), 0),
-        'loan_repaid', coalesce(sum(amount) filter (where kind = 'loan_repayment'), 0))
+        'loan_repaid', coalesce(sum(amount) filter (where kind = 'loan_repayment'), 0),
+        'opening_debt', rsa_setting_num('opening_debt', 0),
+        'debt_left', rsa_debt_left())
         from capital_entries where status = 'done'),
     'capital_rows', (select coalesce(jsonb_agg(to_jsonb(c) || jsonb_build_object('account_name', (select name from payment_accounts where id = c.account_id)) order by c.occurred_at desc), '[]')
                      from capital_entries c),

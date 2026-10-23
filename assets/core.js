@@ -127,10 +127,11 @@
   const today = () => (RSA.state.boot && RSA.state.boot.today) || new Date().toISOString().slice(0, 10);
   const addDays = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
   const nowLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+  const toLocal = (iso) => { if (!iso) return ''; const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
   const toIso = (local) => (local ? new Date(local).toISOString() : null);
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'r' + Date.now() + Math.random().toString(16).slice(2));
   const can = (perm) => !!(RSA.state.boot && RSA.state.boot.me.perms.includes(perm));
-  Object.assign(RSA, { esc, num, money, qty, date, dt, time, today, addDays, nowLocal, toIso, uid, can });
+  Object.assign(RSA, { esc, num, money, qty, date, dt, time, today, addDays, nowLocal, toLocal, toIso, uid, can });
 
   // ------------------------------------------------------------ icons (stroke, 24px grid)
   const P = {

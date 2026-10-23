@@ -228,3 +228,44 @@ begin
     if exists (select 1 from pg_roles where rolname = 'authenticated') then execute format('revoke all on %I from authenticated', t); end if;
   end loop;
 end $$;
+
+-- ---------------------------------------------------------------- v10: cost groups and budgets
+-- every expense category belongs to one group: A variable cost (moves with sales), B fixed cost, C not a cost (debt, capital, investment, drawing)
+alter table expense_categories add column if not exists code text;
+alter table expense_categories add column if not exists grp text;
+alter table expense_categories add column if not exists parent_id uuid references expense_categories(id);
+alter table expense_categories add column if not exists budget_method text not null default 'amount';
+alter table expense_categories add column if not exists budget_amount numeric(14,2);
+alter table expense_categories add column if not exists budget_pct numeric(8,4);
+alter table expense_categories add column if not exists pct_base text;            -- sales | pcat:<product category> | channel
+alter table expense_categories add column if not exists channel_id uuid references channels(id);
+alter table expense_categories add column if not exists auto_source text;         -- delivery_gp | delivery_ads: filled from platform payouts
+alter table expense_categories add column if not exists c_kind text;              -- group C: loan_repayment | capital_in | investment_item | owner_draw | advance
+alter table expense_categories add column if not exists ratio_key text;           -- fruit | meatball | packaging: weekly cost ratio
+alter table expense_categories add column if not exists budget_confirmed boolean not null default false;
+alter table expense_categories add column if not exists sort_order int not null default 100;
+do $$ begin
+  alter table expense_categories add constraint expense_categories_grp_check check (grp is null or grp in ('A','B','C'));
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter table expense_categories add constraint expense_categories_budget_check check (budget_method in ('amount','pct','fixed'));
+exception when duplicate_object then null; end $$;
+create unique index if not exists expense_categories_code_key on expense_categories(code) where code is not null;
+
+-- which cost a stock item's purchase belongs to (fruit, meatballs, sauces, packaging)
+alter table stock_items add column if not exists cost_category_id uuid references expense_categories(id);
+
+-- recurring costs: monthly or weekly
+alter table fixed_expenses add column if not exists frequency text not null default 'monthly';
+alter table fixed_expenses alter column due_day set default 1;  -- weekly items use weekday instead
+alter table fixed_expenses add column if not exists weekday int;                 -- 0 = Sunday … 6 = Saturday (weekly)
+alter table fixed_expenses add column if not exists fund_source text;
+do $$ begin
+  alter table fixed_expenses add constraint fixed_expenses_freq_check check (frequency in ('monthly','weekly') and (frequency = 'monthly' or weekday between 0 and 6));
+exception when duplicate_object then null; end $$;
+
+-- an edited expense keeps the old row (cancelled) and points both ways
+alter table expenses add column if not exists replaces_id uuid references expenses(id);
+alter table expenses add column if not exists replaced_by uuid references expenses(id);
+alter table expenses add column if not exists edited_at timestamptz;
+alter table expenses add column if not exists edited_by uuid references app_users(id);

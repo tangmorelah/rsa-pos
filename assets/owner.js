@@ -5,6 +5,7 @@
   const B = () => R.state.boot;
   const on = (node, fn) => node && node.addEventListener('click', fn);
   const signed = (v) => (Number(v) > 0 ? '+' : '') + money(v);
+  const WD = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์'];
 
   function profitNote(p) {
     const f = Object.values(p.flags || {});
@@ -17,7 +18,8 @@
   // ------------------------------------------------------------ overview
   const EX_ROUTE = { open_no_sales: 'settings', close_missing: 'closes', close_today: 'close', cash_variance: 'approvals', close_adjust: 'approvals', cancel_after_close: 'orders', expense_review: 'approvals',
     expense_pending: 'approvals', expense_due: 'approvals', stocktake_pending: 'approvals', settlement_diff: 'cashflow', settlement_overdue: 'cashflow', bank_unreconciled: 'cashflow',
-    low_stock: 'stock', unconfirmed: 'settings' };
+    low_stock: 'stock', unconfirmed: 'settings', budget_over: 'dashboard', cost_ratio_high: 'dashboard', missing_docs: 'expenses', fixed_overdue: 'approvals',
+    five_paydays: 'staff' };
   R.EX_ROUTE = EX_ROUTE;
   R.profitNote = profitNote;
 
@@ -61,16 +63,24 @@
         x.doc_no ? R.row({ static: true, t: 'เลขที่เอกสาร', v: esc(x.doc_no) }) : ''].filter(Boolean))}
       ${x.attachments.length ? R.attachLinks(x.attachments) : '<div class="note">ไม่มีรูปหลักฐาน</div>'}
       ${x.ocr_snapshot ? '<p class="muted small">ข้อมูลบางส่วนอ่านจากรูป ผู้บันทึกยืนยันว่าตรวจแล้ว</p>' : ''}
-      ${x.cancel_reason ? `<div class="note">ยกเลิก: ${esc(x.cancel_reason)}</div>` : ''}
+      ${x.cancel_reason ? `<div class="note">ยกเลิก: ${esc(x.cancel_reason)}${x.replaced_by_no ? ' · แทนด้วย ' + esc(x.replaced_by_no) : ''}</div>` : ''}
+      ${x.replaces_no || x.edited_at ? `<p class="muted small">${x.replaces_no ? 'แก้ไขจาก ' + esc(x.replaces_no) + ' · ' : ''}${x.edited_at ? 'แก้ไขล่าสุด ' + R.dt(x.edited_at) + (x.edited_by_name ? ' โดย ' + esc(x.edited_by_name) : '') : ''}</p>` : ''}
+      ${x.wage_bill && x.status !== 'ยกเลิก' ? '<div class="note info">บิลค่าจ้างประมาณการ แก้ยอดได้ จ่ายจริงที่หน้า พนักงาน / ค่าจ้าง (ตามวันทำงาน) แล้วระบบปิดบิลนี้ให้เอง</div>' : ''}
       <div class="btn-row" id="acts"></div>`);
     const acts = [];
     if (R.can('expense.cancel') && x.status !== 'ยกเลิก') acts.push(['x', x.status === 'รออนุมัติ' ? 'ไม่อนุมัติ' : 'ยกเลิก', 'danger']);
     if (R.can('expense.approve') && x.status === 'รออนุมัติ') acts.push(['ok', 'อนุมัติ', '']);
     if (R.can('expense.approve') && x.status === 'จ่ายแล้ว' && !x.reviewed) acts.push(['ok', 'ตรวจแล้ว', 'primary']);
-    if (R.can('expense.pay') && (x.status === 'รอทำจ่าย' || (x.status === 'รออนุมัติ' && R.can('expense.approve')))) acts.push(['pay', x.status === 'รออนุมัติ' ? 'อนุมัติและจ่าย' : 'จ่ายเงิน', 'primary']);
+    const editable = x.status !== 'ยกเลิก' && !x.receipt_id && x.fund_source !== 'payroll' && !x.advance_user_id
+      && (R.can('expense.approve') || (x.created_by === B().me.id && x.status === 'รออนุมัติ'));
+    if (editable) acts.push(['ed', 'แก้ไข', '']);
+    if (x.wage_bill && x.status !== 'ยกเลิก' && R.can('expense.pay')) acts.push(['wage', 'จ่ายค่าจ้าง', 'primary']);
+    else if (R.can('expense.pay') && (x.status === 'รอทำจ่าย' || (x.status === 'รออนุมัติ' && R.can('expense.approve')))) acts.push(['pay', x.status === 'รออนุมัติ' ? 'อนุมัติและจ่าย' : 'จ่ายเงิน', 'primary']);
     m.el.querySelector('#acts').innerHTML = acts.map(([k, l, c]) => `<button class="btn lg ${c}" data-a="${k}">${l}</button>`).join('');
     on(m.el.querySelector('[data-a=ok]'), (ev) => R.busy(ev.currentTarget, async () => { await R.api('expense.approve', { expense_id: x.id }); m.close(); R.toast('บันทึกแล้ว'); done(); }));
     on(m.el.querySelector('[data-a=pay]'), () => { m.close(); paySheet(x, done); });
+    on(m.el.querySelector('[data-a=wage]'), () => { m.close(); location.hash = '#/staff'; });
+    on(m.el.querySelector('[data-a=ed]'), () => { m.close(); editExpense(x, done); });
     on(m.el.querySelector('[data-a=x]'), async () => {
       m.close();
       const r = await R.askReason((x.status === 'รออนุมัติ' ? 'ไม่อนุมัติ ' : 'ยกเลิก ') + x.expense_no, { text: x.status === 'จ่ายแล้ว' ? 'จ่ายไปแล้ว ระบบจะบันทึกเงินกลับเข้าบัญชีเดิม' : '', danger: true, ok: 'ยืนยัน' });
@@ -78,6 +88,25 @@
     });
   }
   R.expenseSheet = expenseSheet;
+
+  // edit: not paid yet = changed in place; paid = old row cancelled and a new one paid (money follows), always with a reason
+  function editExpense(x, done) {
+    const m = R.modal('แก้ไข ' + x.expense_no, `<form class="form">
+      ${x.status === 'จ่ายแล้ว' ? '<p class="note info">จ่ายแล้ว: ระบบยกเลิกรายการเดิม (เงินกลับเข้าบัญชีเดิม) แล้วบันทึกใหม่ด้วยยอดที่แก้ เก็บประวัติทั้งสองรายการ</p>' : ''}
+      <label class="field"><span>จำนวนเงิน</span><input type="number" id="amt" min="0.01" step="0.01" inputmode="decimal" class="input-amt" value="${esc(x.amount)}" required></label>
+      <label class="field"><span>จ่ายค่าอะไร</span><input type="text" id="desc" value="${esc(x.description)}" required></label>
+      <label class="field"><span>หมวด</span><select id="cat">${R.catOptions(B().categories.filter((c) => !R.isNotCost(c)), x.category_id)}</select></label>
+      <label class="field"><span>จ่ายให้</span><input type="text" id="payee" value="${esc(x.payee || '')}"></label>
+      <label class="field"><span>วันที่ของค่าใช้จ่าย</span><input type="datetime-local" id="at" value="${R.toLocal(x.occurred_at)}"></label>
+      <label class="field"><span class="req">เหตุผลที่แก้</span><input type="text" id="why" required placeholder="เช่น ยอดตามใบเสร็จจริง"></label>
+      <button class="btn primary lg">บันทึกการแก้ไข</button></form>`);
+    m.el.querySelector('form').addEventListener('submit', (ev) => { ev.preventDefault(); R.busy(ev.submitter, async () => {
+      await R.api('expense.update', { expense_id: x.id, amount: R.val(m.el, '#amt'), description: R.val(m.el, '#desc'), category_id: R.val(m.el, '#cat'),
+        payee: R.val(m.el, '#payee'), occurred_at: R.val(m.el, '#at') ? R.toIso(R.val(m.el, '#at')) : null, reason: R.val(m.el, '#why') });
+      m.close(); R.toast('แก้ไขแล้ว ยอดในภาพรวมเปลี่ยนตามทันที'); done();
+    }); });
+  }
+  R.editExpense = editExpense;
 
   function stocktakeSheet(t, done) {
     const m = R.modal('ผลนับสต็อก', `<p class="muted small">${R.dt(t.created_at)} · ${esc(t.created_by_name)} · ${t.context === 'close' ? 'นับตอนปิดยอด' : 'นับสต็อก'}</p>
@@ -150,8 +179,9 @@
         ${Number(fc.min_working_capital) ? `<p class="muted small">เงินหมุนขั้นต่ำที่ต้องกันไว้ ${baht(fc.min_working_capital)}</p>` : ''}</div>
       ${R.table([{ l: 'ช่วง', f: (h) => h.days + ' วันข้างหน้า' }, { l: 'Delivery เข้า', num: true, f: (h) => '+' + money(h.delivery_in) },
         { l: 'ยอดขายหน้าร้าน (ประมาณ)', num: true, f: (h) => '+' + money(h.est_sales) }, { l: 'ค้างจ่าย', num: true, f: (h) => '−' + money(h.payables) },
-        { l: 'ค่าใช้จ่ายประจำ', num: true, f: (h) => '−' + money(h.fixed) }, { l: 'ใช้จ่ายทั่วไป (ประมาณ)', num: true, f: (h) => '−' + money(h.est_spend) },
-        { l: 'คาดว่าคงเหลือ', num: true, main: true, f: (h) => { const e = Number(fc.cash_now) + Number(h.delivery_in) + Number(h.est_sales) - Number(h.payables) - Number(h.fixed) - Number(h.est_spend);
+        { l: 'ค่าใช้จ่ายประจำ', num: true, f: (h) => '−' + money(h.fixed) }, { l: 'งวดหนี้', num: true, f: (h) => (Number(h.debt) ? '−' + money(h.debt) : '-') },
+        { l: 'ใช้จ่ายทั่วไป (ประมาณ)', num: true, f: (h) => '−' + money(h.est_spend) },
+        { l: 'คาดว่าคงเหลือ', num: true, main: true, f: (h) => { const e = Number(fc.cash_now) + Number(h.delivery_in) + Number(h.est_sales) - Number(h.payables) - Number(h.fixed) - Number(h.debt || 0) - Number(h.est_spend);
           return `<b style="color:${e < Number(fc.min_working_capital || 0) ? 'var(--bad)' : 'inherit'}">${baht(e)}</b>`; } }], fc.horizons)}
       <div class="stats">${R.stat('ขายหน้าร้านเฉลี่ย/วัน', baht(fc.avg_daily_storefront), '14 วันล่าสุด')}${R.stat('จ่ายเฉลี่ย/วัน', baht(fc.avg_daily_outflow), '30 วันล่าสุด')}
         ${R.stat('เงินพอใช้ (Runway)', fc.runway_days != null ? fc.runway_days + ' วัน' : '-', 'ถ้าไม่มีเงินเข้าเลย')}${R.stat('ค่าใช้จ่ายประจำที่ยังไม่ยืนยัน', fc.unconfirmed_fixed.length + ' รายการ', fc.unconfirmed_fixed.map((f) => esc(f.name)).join(', '))}</div>
@@ -161,7 +191,7 @@
       ${R.sec('ค้างจ่าย', x.payables.length ? '<a href="#/approvals">จัดการ</a>' : '')}
       ${R.list(x.payables.slice(0, 6).map((p) => R.row({ href: '#/approvals', icon: 'wallet', t: esc(p.description), s: `ครบ ${R.date(p.due_date)} · ${esc(p.status)}`, v: baht(p.amount) })), 'ไม่มีค่าใช้จ่ายค้างจ่าย')}
       ${R.sec('ทุน หนี้ และกำไร')}
-      <div class="stats">${R.stat('ทุนที่ใส่', baht(c.capital_in), 'คืนแล้ว ' + money(c.capital_returned))}${R.stat('หนี้คงค้าง', baht(Number(c.loan_in) - Number(c.loan_repaid)), 'กู้ ' + money(c.loan_in))}
+      <div class="stats">${R.stat('ทุนที่ใส่', baht(c.capital_in), 'คืนแล้ว ' + money(c.capital_returned))}${R.stat('หนี้คงค้าง', baht(c.debt_left ?? (Number(c.loan_in) - Number(c.loan_repaid))), 'ตั้งต้น ' + money(c.opening_debt || 0) + ' + กู้เพิ่ม ' + money(c.loan_in) + ' − ชำระ ' + money(c.loan_repaid))}
         ${R.stat('กำไรสะสม (ประมาณ)', baht(pf.cumulative_net))}${R.stat('กำไรที่ประกาศได้', baht(pf.available), 'ประกาศแล้ว ' + money(pf.declared) + (Number(pf.owner_goods) ? ' · เจ้าของหยิบสินค้า ' + money(pf.owner_goods) : ''))}</div>
       ${profitNote(pf)}
       ${manage ? R.list([R.row({ data: { act: 'pf' }, icon: 'check', t: 'ประกาศใช้กำไร', s: 'โปะหนี้ · เก็บเป็นเงินหมุน · ลงทุนกลับร้าน · คืนทุน · จ่ายเจ้าของ' }), R.row({ data: { act: 'cap' }, icon: 'plus', t: 'บันทึกทุน ถอนเงินเจ้าของ หรือ เงินกู้' }), R.row({ href: '#/invest', icon: 'chart', t: 'เงินลงทุน / คืนทุน' })]) : ''}
@@ -247,8 +277,8 @@
 
   // ------------------------------------------------------------ all expenses
   R.def('expenses', { title: 'ค่าใช้จ่ายทั้งหมด', back: 'more' }, async function (el) {
-    let tab = '';
-    const TABS = [['', 'ทั้งหมด'], ['รออนุมัติ', 'รออนุมัติ'], ['รอทำจ่าย', 'รอทำจ่าย'], ['จ่ายแล้ว', 'จ่ายแล้ว'], ['ยกเลิก', 'ยกเลิก'], ['fixed', 'ประจำเดือน']];
+    let tab = R.store.get('exp.tab') || '';
+    const TABS = [['', 'ทั้งหมด'], ['รออนุมัติ', 'รออนุมัติ'], ['รอทำจ่าย', 'รอทำจ่าย'], ['จ่ายแล้ว', 'จ่ายแล้ว'], ['docs', 'รอเอกสาร'], ['ยกเลิก', 'ยกเลิก'], ['fixed', 'ค่าใช้จ่ายประจำ']];
     async function draw() {
       const r = R.periodRange(), sm = await R.api('report.expenses', r);
       el.innerHTML = `${R.sectTabs('expenses')}${R.periodBar({ compare: false })}
@@ -259,11 +289,16 @@
             ${sm.owed.length ? `<h2 style="margin-top:12px">ร้านค้างคืน</h2>${sm.owed.map((o) => `<div class="sum-row"><span>${esc(o.owed_to)} (${o.count})</span><b>${money(o.amount)}</b></div>`).join('')}` : ''}</div></div>
         <div class="chips">${TABS.map(([k, l]) => `<button class="chip" data-tab="${k}" aria-pressed="${k === tab}">${l}</button>`).join('')}</div><div id="body" class="form"><div class="boot">กำลังโหลด…</div></div>
         ${R.actionbar('<a class="btn primary" href="#/expense">+ บันทึกค่าใช้จ่าย</a>')}`;
-      el.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; draw().catch(R.fail); }));
+      el.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; R.store.set('exp.tab', tab); draw().catch(R.fail); }));
       R.bindPeriod(el, () => draw().catch(R.fail));
       const body = el.querySelector('#body');
       if (tab === 'fixed') return fixed(body);
-      const list = await R.api('expense.list', { status: tab, ...r });
+      let list;
+      if (tab === 'docs') {
+        // paid in the last 60 days with no receipt / slip attached
+        const miss = (await R.api('report.costs', {})).missing_docs.map((d) => d.id);
+        list = (await R.api('expense.list', { from: R.addDays(R.today(), -60) })).filter((x) => miss.includes(x.id));
+      } else list = await R.api('expense.list', { status: tab, ...r });
       body.innerHTML = `<p class="muted small" style="padding:0 4px">${list.length} รายการ รวม ${baht(list.reduce((a, x) => a + Number(x.amount), 0))}</p>
         ${R.list(list.map((x) => R.row({ data: { x: x.id }, icon: 'wallet', off: x.status === 'ยกเลิก', t: esc(x.description), s: `${R.dt(x.occurred_at)} · ${esc(x.category_name || '')} · ${esc(R.FUND[x.fund_source] || '')} · ${esc(x.created_by_name)}${x.attachments.length ? '' : ' · ไม่มีรูป'}`,
           v: baht(x.amount), pill: R.statusPill(x.status) + (x.status === 'จ่ายแล้ว' && !x.reviewed ? ' <span class="pill">รอตรวจ</span>' : '') + (x.owed_to ? ' <span class="pill warn">ค้างคืน</span>' : '') })), 'ไม่มีรายการ')}`;
@@ -271,16 +306,19 @@
     }
     async function fixed(body) {
       const list = await R.api('master.list', { entity: 'fixed_expenses' });
-      body.innerHTML = `<p class="muted small" style="padding:0 4px">ระบบสร้างรายการของแต่ละเดือนให้ครั้งเดียว แล้วไปรออนุมัติ/จ่ายตามปกติ</p>
-        ${R.list(list.map((f) => R.row({ data: { f: f.id }, icon: 'calendar', off: !f.active, t: esc(f.name), s: `ทุกวันที่ ${f.due_day}${f.payee ? ' · ' + esc(f.payee) : ''}${f.this_month ? ' · เดือนนี้ ' + esc(f.this_month.status) : ''}${f.note ? ' · ' + esc(f.note) : ''}`, v: baht(f.amount), pill: f.confirmed === false ? R.unconfirmed() : '' })), 'ยังไม่มี เช่น ค่าเช่า ค่าจ้าง ค่าอินเทอร์เน็ต')}
+      body.innerHTML = `<p class="muted small" style="padding:0 4px">ระบบสร้างรายการ "รอทำจ่าย" ให้เองทุกรอบ (รายเดือนหรือรายสัปดาห์) ไม่สร้างซ้ำ จ่ายแล้วเปลี่ยนเป็น "จ่ายแล้ว"</p>
+        ${R.list(list.map((f) => R.row({ data: { f: f.id }, icon: 'calendar', off: !f.active, t: esc(f.name), s: `${f.frequency === 'weekly' ? 'ทุก' + WD[f.weekday] : 'ทุกวันที่ ' + f.due_day}${f.confirmed === false ? ' · ประมาณการ (ยังไม่ยืนยัน)' : ''}${f.payee ? ' · ' + esc(f.payee) : ''}${f.this_month ? ' · เดือนนี้ ' + esc(f.this_month.status) : ''}${f.note ? ' · ' + esc(f.note) : ''}`, v: baht(f.amount), pill: f.confirmed === false ? R.unconfirmed() : '' })), 'ยังไม่มี เช่น ค่าเช่า ค่าจ้าง ค่าอินเทอร์เน็ต')}
         ${R.can('expense.approve') ? '<div class="btn-row"><button class="btn" id="gen">สร้างรายการเดือนนี้</button><button class="btn primary" id="add">+ เพิ่มรายการประจำ</button></div>' : ''}`;
       const edit = (f) => {
         f = f || { active: true, due_day: 1, start_month: R.today().slice(0, 8) + '01', auto_approve: false };
         const m = R.modal(f.id ? 'แก้ไขค่าใช้จ่ายประจำ' : 'เพิ่มค่าใช้จ่ายประจำ', `<form class="form">
           <label class="field"><span>ชื่อรายการ</span><input type="text" id="name" value="${esc(f.name || '')}" required></label>
-          <label class="field"><span>จำนวนต่อเดือน</span><input type="number" id="amt" min="0" step="0.01" inputmode="decimal" value="${f.amount ?? ''}" class="input-amt" required></label>
-          <div class="two"><label class="field"><span>ครบกำหนดวันที่</span><input type="number" id="due" min="1" max="31" value="${f.due_day}" required></label>
-          <label class="field"><span>หมวด</span><select id="cat">${R.opts(B().categories, f.category_id)}</select></label></div>
+          <div class="field"><span>รอบจ่าย</span>${R.seg('freq', [['monthly', 'รายเดือน'], ['weekly', 'รายสัปดาห์']], f.frequency || 'monthly')}</div>
+          <label class="field"><span>จำนวนต่อรอบ</span><input type="number" id="amt" min="0" step="0.01" inputmode="decimal" value="${f.amount ?? ''}" class="input-amt" required></label>
+          <div class="two"><label class="field" id="duebox"><span>ครบกำหนดวันที่</span><input type="number" id="due" min="1" max="31" value="${f.due_day || 1}"></label>
+          <label class="field" id="wdbox"><span>ครบกำหนดทุกวัน</span><select id="wd">${WD.map((w, i) => `<option value="${i}" ${Number(f.weekday ?? 6) === i ? 'selected' : ''}>${w}</option>`).join('')}</select></label>
+          <label class="field"><span>หมวด</span><select id="cat">${R.catOptions(B().categories.filter((c) => !R.isNotCost(c)), f.category_id)}</select></label></div>
+          <label class="field"><span>แหล่งเงินที่ใช้จ่าย</span><select id="fsrc"><option value="">—</option>${['shop_cash', 'shop_bank', 'other_account'].map((k) => `<option value="${k}" ${f.fund_source === k ? 'selected' : ''}>${esc(R.FUND[k])}</option>`).join('')}</select></label>
           <label class="field"><span>จ่ายให้</span><input type="text" id="payee" value="${esc(f.payee || '')}"></label>
           <label class="field"><span>จ่ายจากบัญชี</span><select id="acc"><option value="">—</option>${R.opts(B().accounts, f.account_id)}</select></label>
           <div class="two"><label class="field"><span>เริ่มเดือน</span><input type="month" id="start" value="${(f.start_month || '').slice(0, 7)}"></label>
@@ -290,9 +328,13 @@
           <label class="field"><span>หมายเหตุ</span><input type="text" id="fnote" value="${esc(f.note || '')}"></label>
           <label class="check"><input type="checkbox" id="active" ${f.active ? 'checked' : ''}> ใช้งาน</label>
           <button class="btn primary lg">บันทึก</button></form>`);
+        const fq = () => { const w = R.segVal(m.el, 'freq') === 'weekly'; m.el.querySelector('#duebox').hidden = w; m.el.querySelector('#wdbox').hidden = !w; };
+        m.el.querySelector('.seg').addEventListener('change', fq); fq();
         m.el.querySelector('form').addEventListener('submit', (ev) => { ev.preventDefault(); R.busy(ev.submitter, async () => {
+          const wk = R.segVal(m.el, 'freq') === 'weekly';
           await R.api('master.save', { entity: 'fixed_expenses', data: { id: f.id, name: R.val(m.el, '#name'), category_id: R.val(m.el, '#cat') || null, payee: R.val(m.el, '#payee'),
-            amount: R.val(m.el, '#amt'), due_day: R.val(m.el, '#due'), account_id: R.val(m.el, '#acc') || null, start_month: R.val(m.el, '#start') + '-01',
+            frequency: wk ? 'weekly' : 'monthly', weekday: wk ? Number(R.val(m.el, '#wd')) : null, fund_source: R.val(m.el, '#fsrc') || null,
+            amount: R.val(m.el, '#amt'), due_day: wk ? 1 : R.val(m.el, '#due'), account_id: R.val(m.el, '#acc') || null, start_month: R.val(m.el, '#start') + '-01',
             end_month: R.val(m.el, '#end') ? R.val(m.el, '#end') + '-01' : null, auto_approve: R.val(m.el, '#auto'), confirmed: R.val(m.el, '#conf'), note: R.val(m.el, '#fnote') || null, active: R.val(m.el, '#active') } });
           m.close(); fixed(body);
         }); });

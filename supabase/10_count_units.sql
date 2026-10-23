@@ -86,7 +86,7 @@ end $$;
 create or replace function rsa_master_cols(p_entity text) returns text[] language sql immutable as $$
   select case p_entity
     when 'products' then array['sku','name','category','unit','price','delivery_price','delivery_enabled','emoji','main_stock_item_id','est_cost','markdown_price','sort_order','active']
-    when 'stock_items' then array['code','name','kind','unit','count_units','min_qty','reorder_qty','avg_cost','default_supplier_id','active']
+    when 'stock_items' then array['code','name','kind','unit','count_units','min_qty','reorder_qty','avg_cost','default_supplier_id','cost_category_id','active']
     when 'units' then array['name','active']
     when 'channels' then array['name','kind','payment_method','account_id','fee_pct','fee_confirmed','settlement_days','sort_order','active']
     when 'payment_accounts' then array['name','kind','is_drawer','bank_detail','opening_balance','opening_confirmed','active']
@@ -94,7 +94,9 @@ create or replace function rsa_master_cols(p_entity text) returns text[] languag
     when 'suppliers' then array['name','contact_name','phone','line_id','supplies','order_days','lead_time','delivery_schedule','min_order',
                                 'delivery_fee','payment_method','credit_terms','bank_detail','can_issue_receipt','can_issue_tax_invoice',
                                 'return_terms','priority','note','active']
-    when 'expense_categories' then array['name','tax_category','staff_allowed','active']
-    when 'fixed_expenses' then array['name','category_id','payee','amount','due_day','account_id','start_month','end_month','auto_approve','confirmed','note','active']
+    when 'expense_categories' then array['name','tax_category','staff_allowed','active','code','grp','parent_id','budget_method','budget_amount','budget_pct',
+                                          'pct_base','channel_id','c_kind','ratio_key','budget_confirmed','sort_order']
+    when 'fixed_expenses' then array['name','category_id','payee','amount','due_day','account_id','start_month','end_month','auto_approve','confirmed','note','active',
+                                      'frequency','weekday','fund_source']
   end
 $$;

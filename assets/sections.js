@@ -42,18 +42,17 @@
         : dash.holiday ? { tone: 'ok', t: `วันนี้ร้านหยุด${Number(dash.sales.orders_count) ? ` แต่มีการขาย ${dash.sales.orders_count} ออเดอร์ ควรส่งรายงานปิดยอด` : ' ไม่ต้องปิดยอด'}`, btn: '' }
         : { tone: '', t: `วันนี้ยังไม่ปิดยอด · ส่งภายใน ${esc(dash.due_time)} น.`, btn: '' };
       if (canHol && (!dash.holiday || oneOff)) status.btn += `<button type="button" class="btn small ghost" id="hol">${dash.holiday ? 'ยกเลิกวันหยุด' : 'วันนี้ร้านหยุด'}</button>`;
-      // without product costs the profit is meaningless (100% margin): say what is missing instead; other gaps are a note
-      const fl = k.profit_flags || {}, flags = Object.values(fl), noCost = !!fl.cost;
-      const profit = !noCost
-        ? R.mlist([['กำไร (ประมาณ)', [
-            R.mrow('กำไรขั้นต้น', baht(k.gross_profit), { delta: R.delta(k.gross_profit, p.gross_profit), sub: 'อัตรากำไร ' + pct(k.margin_pct), href: '#/products' }),
-            R.mrow('ของเสียต่อยอดขาย', pct(k.waste_pct), { sub: 'มูลค่า ' + money(k.waste), tone: Number(k.waste_pct) > 5 ? 'warn' : '', href: '#/products' }),
-            ...(Number(k.markdown) ? [R.mrow('ลดราคาตอนเย็น', money(k.markdown), { href: '#/products' })] : []),
-            ...(Number(k.staff_meals) ? [R.mrow('สวัสดิการทีมงาน', money(k.staff_meals), { sub: 'ราคาทุน', href: '#/products' })] : []),
-            ...(target ? [R.mrow('กำไรสุทธิเดือนนี้ / เป้า', baht(mnp), { sub: `เป้า ${money(target)} · ${Math.round((mnp / target) * 100)}%`, href: '#/invest' })] : [])]]])
-          + (flags.length ? `<p class="muted small" style="padding:4px 4px 0">ตัวเลขยังเป็นค่าประมาณ: ${flags.map(esc).join(' · ')}</p>` : '')
-        : `<div class="pcard"><span class="k">กำไร</span><b>ยังคำนวณกำไรไม่ได้</b><span class="sub">${esc(fl.cost)} ใส่สูตรหรือต้นทุนแล้วระบบจะคำนวณให้</span>
-            <a class="go" href="#/master/products" style="font-weight:600">ใส่สูตร / ต้นทุนสินค้า ›</a></div>`;
+      // one formula everywhere: sales − variable costs (A) = gross profit − fixed costs (B) = net profit; estimates are labelled
+      const fl = k.profit_flags || {}, flags = Object.values(fl);
+      const profit = R.mlist([['กำไร · ' + R.periodLabel(), [
+            R.mrow('ยอดขาย', baht(k.revenue)),
+            R.mrow('− ต้นทุนผันแปร (A)', money(k.var_costs), { sub: 'วัตถุดิบ แพ็กเกจจิ้ง ค่าเดินทาง GP / โฆษณา Delivery' }),
+            R.mrow('= กำไรขั้นต้น', baht(k.gross_profit), { delta: R.delta(k.gross_profit, p.gross_profit), sub: 'อัตรากำไร ' + pct(k.margin_pct) }),
+            R.mrow('− ค่าใช้จ่ายคงที่ (B)', money(k.fixed_costs), { sub: 'ค่าจ้าง ค่าเช่า ค่าดำเนินการ', href: '#/expenses' }),
+            R.mrow('= กำไรสุทธิ', baht(k.net_profit), { delta: R.delta(k.net_profit, p.net_profit), tone: Number(k.net_profit) < 0 ? 'bad' : '' }),
+            ...(Number(k.waste) ? [R.mrow('ของเสียต่อยอดขาย', pct(k.waste_pct), { sub: 'มูลค่า ' + money(k.waste) + ' (อยู่ในยอดซื้อแล้ว ไม่หักซ้ำ)', tone: Number(k.waste_pct) > 5 ? 'warn' : '', href: '#/products' })] : []),
+            ...(Number(k.staff_meals) ? [R.mrow('สวัสดิการทีมงาน', money(k.staff_meals), { sub: 'ราคาทุน (อยู่ในยอดซื้อแล้ว)', href: '#/products' })] : [])]]])
+          + (flags.length ? `<p class="muted small" style="padding:4px 4px 0"><span class="pill warn">ประมาณการ</span> ${flags.map(esc).join(' · ')}</p>` : '');
       box.innerHTML = `<div class="full today-bar ${status.tone}"><span class="dot"></span><span class="txt">${status.t}</span>${status.btn}</div>
         ${todo.length ? `<div class="full">${R.sec('ต้องทำ (' + todo.length + ')')}${R.shortList(todo, 3, '')}</div>` : ''}
         <a class="pcard full" href="#/sales" style="text-decoration:none;color:inherit">
@@ -66,7 +65,9 @@
             R.mrow('รอรับจาก Delivery', baht(n.delivery_receivable), { href: '#/delivery' }),
             R.mrow('ค้างจ่าย', baht(n.payables), { href: '#/approvals' }),
             ...(Number(n.owed_reimburse) ? [R.mrow('ร้านค้างคืนพนักงาน / เจ้าของ', baht(n.owed_reimburse), { tone: 'warn', href: '#/expenses' })] : [])]]])}</div>
-        <div class="full">${profit}</div>`;
+        <div class="full">${profit}</div>
+        <div class="full" id="costs"><div class="boot">กำลังโหลดรายละเอียดต้นทุน…</div></div>`;
+      R.costCard(box.querySelector('#costs')).catch(R.fail);
       on(box.querySelector('[data-sv]'), () => R.setStaffView(true));
       on(box.querySelector('#hol'), (ev) => R.busy(ev.currentTarget, async () => {
         const d = R.settingVal('closed_dates', []) || [], t = R.today();
@@ -75,6 +76,73 @@
       }));
     });
   });
+
+  // ------------------------------------------------------------ cost details of a month (overview)
+  const GRP_HELP = { A: 'ขึ้นลงตามยอดขาย', B: 'จ่ายทุกเดือน ไม่ว่าขายได้เท่าไร', C: 'ไม่นับในกำไร: หนี้ ทุน เงินลงทุน ถอนกำไร' };
+  const RATIO = { fruit: 'ผลไม้', meatball: 'ลูกชิ้น', packaging: 'แพ็กเกจจิ้ง' };
+  R.costCard = async function (host, month) {
+    const m0 = month || R.today().slice(0, 8) + '01', prevM = R.addDays(m0, -1).slice(0, 8) + '01';
+    const c = await R.api('report.costs', { month: m0 }), sm = c.summary, over = Number(c.over_alert_pct) || 0.1;
+    const est = (r) => (r.estimate ? ' <span class="pill warn">ประมาณการ</span>' : '');
+    const visible = c.rows.filter((r) => Number(r.used) || r.budget_month != null || r.has_children);
+    const rowsOf = (g) => {
+      const list = visible.filter((r) => r.grp === g), top = list.filter((r) => !r.parent_id || !list.some((x) => x.id === r.parent_id));
+      return top.flatMap((r) => [r, ...list.filter((x) => x.parent_id === r.id).map((x) => ({ ...x, _sub: true }))]);
+    };
+    const diffCell = (r) => {
+      if (r.diff == null) return '-';
+      const d = Number(r.diff), bad = Number(r.budget_to_date) > 0 && Number(r.used) > Number(r.budget_to_date) * (1 + over);
+      return `<span class="${bad ? 'pill warn' : d > 0 ? '' : 'muted'}">${d > 0 ? '+' : ''}${money(d)}</span>`;
+    };
+    const table = (g) => R.table([
+      { l: 'หมวด', f: (r) => `${r._sub ? '<span class="muted">· </span>' : ''}${esc(r.name)}${est(r)}${r.rounds ? `<br><span class="muted small">${r.rounds} รอบจ่ายในเดือนนี้</span>` : ''}${r.budget_method === 'pct' && r.budget_pct != null ? `<br><span class="muted small">งบ ${qty(Number(r.budget_pct) * 100)}% ของยอดขาย${r.pct_base && r.pct_base.startsWith('pcat:') ? r.pct_base.slice(5) : ''}</span>` : ''}` },
+      { l: 'งบ/เดือน', num: true, f: (r) => (r.budget_month == null ? '-' : money(r.budget_month)) },
+      { l: 'ใช้จริงถึงวันนี้', num: true, main: true, f: (r) => money(r.used) },
+      { l: 'ควรใช้ถึงวันนี้', num: true, f: (r) => (r.budget_to_date == null ? '-' : money(r.budget_to_date)) },
+      { l: 'ส่วนต่าง', num: true, f: diffCell },
+      { l: '% ยอดขาย', num: true, f: (r) => (r.pct_of_sales == null ? '-' : qty(r.pct_of_sales) + '%') }], rowsOf(g), { click: 'cat', empty: 'ยังไม่มีรายการ' });
+    const tot = (g, k) => c.rows.filter((r) => r.grp === g && !r.parent_id).reduce((t, r) => t + (Number(r[k]) || 0), 0);
+    const weeks = c.weeks.slice(-6), keys = Object.keys(weeks[weeks.length - 1]?.ratios || {}).filter((k) => RATIO[k]);
+    const target = Number(sm.net_target) || 0;
+    host.innerHTML = `<div class="card">
+      <div class="sec-title" style="padding:0"><h2>รายละเอียดต้นทุน · ${esc(R.date(m0).replace(/^\d+\s/, ''))}</h2>
+        <span class="chips"><button type="button" class="chip" data-m="${R.today().slice(0, 8)}01" aria-pressed="${m0 === R.today().slice(0, 8) + '01'}">เดือนนี้</button><button type="button" class="chip" data-m="${prevM}" aria-pressed="${m0 === prevM}">เดือนก่อน</button></span></div>
+      <p class="muted small">ข้อมูลชุดเดียวกับหน้าค่าใช้จ่าย รับของ จ่ายค่าจ้าง และเงินเข้า Delivery · ถึงวันที่ ${R.date(c.to)} (${c.elapsed}/${c.days} วัน)</p>
+      ${R.mlist([['', [
+        R.mrow('ยอดขาย', baht(sm.sales), { sub: c.sales_target ? 'เป้าเดือน ' + money(c.sales_target) : '' }),
+        R.mrow('− ต้นทุนผันแปร (A)', money(sm.var_costs), { sub: Number(sm.sales) ? Math.round((sm.var_costs / sm.sales) * 1000) / 10 + '% ของยอดขาย' : '' }),
+        R.mrow('= กำไรขั้นต้น', baht(sm.gross_profit)),
+        R.mrow('− ค่าใช้จ่ายคงที่ (B)', money(sm.fixed_costs)),
+        R.mrow('= กำไรสุทธิ', baht(sm.net_profit), { tone: Number(sm.net_profit) < 0 ? 'bad' : target && Number(sm.net_profit) >= Number(sm.net_target_to_date) ? 'ok' : '',
+          sub: target ? `เป้าเดือน ${money(target)} · ถึงวันนี้ควรได้ ${money(sm.net_target_to_date)}` : 'ยังไม่ได้ตั้งเป้ากำไร (ตั้งค่าร้าน)' })]]])}
+      ${Object.keys(sm.flags || {}).length ? `<p class="muted small"><span class="pill warn">ประมาณการ</span> ${Object.values(sm.flags).map(esc).join(' · ')}</p>` : ''}
+      ${c.five_paydays ? '<div class="note info">เดือนนี้มีรอบจ่ายค่าจ้าง 5 รอบ งบค่าจ้างคิดตามรอบจริง จึงสูงกว่าเดือนปกติ</div>' : ''}
+      ${['A', 'B'].map((g) => `<details ${g === 'A' ? 'open' : ''} style="margin-top:10px"><summary><b>${esc(R.GRP[g])}</b> · ใช้ ${money(tot(g, 'used'))}${tot(g, 'budget_to_date') ? ' / ควรใช้ ' + money(tot(g, 'budget_to_date')) : ''}
+          <span class="muted small">(${GRP_HELP[g]})</span></summary><div style="margin-top:8px">${table(g)}</div></details>`).join('')}
+      <details style="margin-top:10px"><summary><b>${esc(R.GRP.C)}</b> · ${money(tot('C', 'used'))} <span class="muted small">(${GRP_HELP.C})</span></summary>
+        <div style="margin-top:8px">${R.table([{ l: 'รายการ', f: (r) => esc(r.name) }, { l: 'เดือนนี้', num: true, main: true, f: (r) => money(r.used) }], c.rows.filter((r) => r.grp === 'C'), { empty: '-' })}
+        <p class="muted small">ชำระหนี้ เงินเติมจากเจ้าของ เงินลงทุน และถอนกำไร บันทึกที่หน้า <a href="#/cashflow">เงิน</a> ไม่หักจากกำไร</p></div></details>
+      ${keys.length ? `<h2 style="margin-top:14px">สัดส่วนต้นทุนรายสัปดาห์</h2>
+        ${R.table([{ l: 'สัปดาห์', f: (w) => `${R.date(w.from).replace(/\s\d{4}$/, '')} – ${R.date(w.to).replace(/\s\d{4}$/, '')}${w.complete ? '' : ' <span class="muted small">(ยังไม่จบ)</span>'}` },
+          ...keys.map((k) => ({ l: RATIO[k] + (c.limits[k] != null ? ' (≤ ' + Math.round(c.limits[k] * 100) + '%)' : ''), num: true, f: (w) => {
+            const x = w.ratios[k] || {}; if (x.ratio == null) return '-';
+            const pc = Math.round(x.ratio * 1000) / 10, bad = c.limits[k] != null && x.ratio > c.limits[k];
+            return `<span class="${bad ? 'pill warn' : ''}">${pc}%</span><br><span class="muted small">${money(x.purchase)} / ${money(x.sales)}</span>`; } }))], weeks.slice().reverse())}
+        <p class="muted small">ยอดซื้อในหมวด ÷ ยอดขายสินค้าที่ใช้หมวดนั้น · เกินเกณฑ์ 2 สัปดาห์ติด ระบบแจ้งให้เช็กราคาซื้อ yield ของเสีย และขนาดกล่อง</p>` : ''}
+      ${c.missing_docs.length ? `<a class="row" href="#/expenses" data-docs style="margin-top:10px"><span class="body"><span class="t">รอเอกสาร ${c.missing_docs.length} รายการ</span><span class="s">ค่าใช้จ่ายที่จ่ายแล้วแต่ยังไม่แนบใบเสร็จ / สลิป</span></span></a>` : ''}
+    </div>`;
+    host.querySelectorAll('[data-m]').forEach((b) => b.addEventListener('click', () => R.costCard(host, b.dataset.m).catch(R.fail)));
+    on(host.querySelector('[data-docs]'), () => R.store.set('exp.tab', 'docs'));
+    R.bindRows(host, 'cat', async (id) => {
+      const r = c.rows.find((x) => x.id === id); if (!r) return;
+      if (r.auto_source) { location.hash = '#/delivery'; return; }
+      const list = (await R.api('expense.list', { category_id: id, from: c.from, to: c.to })).filter((x) => x.status !== 'ยกเลิก');
+      const md = R.modal(r.name, `<p class="muted small">${R.date(c.from)} – ${R.date(c.to)} · ${list.length} รายการ รวม ${baht(list.reduce((t, x) => t + Number(x.amount), 0))}</p>
+        ${R.list(list.map((x) => R.row({ data: { x: x.id }, icon: 'wallet', t: esc(x.description), s: `${R.dt(x.occurred_at)} · ${esc(x.category_name || '')} · ${esc(x.created_by_name || '')}${x.attachments.length ? ' · มีหลักฐาน ' + x.attachments.length : ' · ไม่มีหลักฐาน'}`,
+          v: baht(x.amount), pill: R.statusPill(x.status) })), 'ยังไม่มีรายการในเดือนนี้')}`);
+      md.el.querySelectorAll('[data-x]').forEach((b) => b.addEventListener('click', () => { md.close(); R.expenseSheet(list.find((y) => y.id === b.dataset.x), () => R.costCard(host, m0).catch(R.fail)); }));
+    });
+  };
 
   // ------------------------------------------------------------ 2. sales
   R.def('sales', { title: 'ยอดขาย', tab: 'sales' }, async function (el) {

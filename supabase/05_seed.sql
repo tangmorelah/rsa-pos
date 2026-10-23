@@ -30,7 +30,9 @@ from (values ('หน้าร้าน เงินสด', 'storefront', 'cash
              ('Grab', 'delivery', 'platform', 7, 4)) v(name, kind, pm, days, sort)
 where not exists (select 1 from channels);
 
-insert into expense_categories(name, tax_category, staff_allowed) values
+-- first install only: the owner may rename categories later, and a re-run must not bring the old names back
+insert into expense_categories(name, tax_category, staff_allowed)
+select v.name, v.tax, v.staff from (values
   ('วัตถุดิบ / ของเข้าร้าน', 'ต้นทุนสินค้า', true),
   ('บรรจุภัณฑ์', 'ต้นทุนสินค้า', true),
   ('วัสดุสิ้นเปลือง', 'ค่าใช้จ่ายในการขาย', true),
@@ -40,5 +42,6 @@ insert into expense_categories(name, tax_category, staff_allowed) values
   ('ค่าจ้างพนักงาน', 'เงินเดือนและค่าจ้าง', false),
   ('ค่าธรรมเนียม', 'ค่าธรรมเนียม', false),
   ('ซ่อมแซม / อุปกรณ์', 'ค่าซ่อมแซม', false),
-  ('อื่น ๆ', null, true)
+  ('อื่น ๆ', null, true)) v(name, tax, staff)
+where not exists (select 1 from expense_categories)
 on conflict (name) do nothing;
