@@ -23,64 +23,198 @@
   }
   const dayLabel = (iso) => { const d = new Date(iso + 'T12:00:00'); return d.getDate() + '/' + (d.getMonth() + 1); };
 
-  // ------------------------------------------------------------ 1. overview: one big number, a quiet list of key numbers, then what to look at
+  // ------------------------------------------------------------ 1. overview: how the business is doing, sales against the target, what to do now
+  const TONE_TXT = { ok: 'ไปได้ดี', warn: 'ต้องระวัง', bad: 'ต้องแก้ด่วน' };
+  const kpiVal = (x) => (x.value == null ? '-' : x.unit === 'baht' ? baht(x.value) : x.unit === 'pct' ? qty(Math.round(x.value * 1000) / 10) + '%' : qty(x.value) + ' ' + x.unit);
+  const kpiTgt = (x) => (x.target == null ? 'ยังไม่ตั้งเป้า' : (x.max ? '≤ ' : 'เป้า ') + (x.unit === 'baht' ? money(x.target) : x.unit === 'pct' ? Math.round(x.target * 100) + '%' : qty(x.target) + ' ' + x.unit));
   R.def('dashboard', { title: 'ภาพรวม', tab: 'dashboard' }, async function (el) {
-    await periodPage(el, 'dashboard', async (box, r) => {
-      const [ov, dash] = await Promise.all([R.api('report.overview', r), R.api('dashboard', {})]);
-      const k = ov.kpi, p = ov.prev, n = ov.now;
-      const target = Number(n.profit_target), mnp = Number(n.month_net_profit);
-      const low = Number(n.min_working_capital) && Number(n.cash) < Number(n.min_working_capital);
-      const cl = dash.close;
-      const todo = dash.exceptions.slice().sort((a, b) => (a.level === 'warn' ? 0 : 1) - (b.level === 'warn' ? 0 : 1))
-        .map((e) => R.row({ href: '#/' + (R.EX_ROUTE[e.kind] || 'dashboard'), icon: e.level === 'warn' ? 'shield' : 'list', tone: e.level === 'warn' ? 'warn' : '', t: esc(e.text) }));
-      const canHol = R.can('settings.manage') && !cl, oneOff = (R.settingVal('closed_dates', []) || []).includes(R.today());
-      // today first: was the day closed, and does the cash match
-      const tol = Number(R.settingVal('cash_variance_tolerance', 0)) || 0, v = cl ? Number(cl.variance) : 0, varOff = cl && Math.abs(v) > tol;
-      const status = cl
-        ? { tone: varOff ? 'warn' : 'ok', t: `ปิดยอดวันนี้แล้ว ${R.time(cl.submitted_at)} น. · ${esc(cl.submitted_by_name)}${cl.on_time === false ? ' (หลังเวลา)' : ''}`
-            + (varOff ? `<br><b>เงินสด${v < 0 ? 'ขาด' : 'เกิน'} ${money(Math.abs(v))} บาท</b>` : v ? ` · เงินสด ${signed(v)}` : ' · เงินสดตรง'), btn: varOff ? '<a class="btn small" href="#/approvals">ตรวจ</a>' : '' }
-        : dash.holiday ? { tone: 'ok', t: `วันนี้ร้านหยุด${Number(dash.sales.orders_count) ? ` แต่มีการขาย ${dash.sales.orders_count} ออเดอร์ ควรส่งรายงานปิดยอด` : ' ไม่ต้องปิดยอด'}`, btn: '' }
-        : { tone: '', t: `วันนี้ยังไม่ปิดยอด · ส่งภายใน ${esc(dash.due_time)} น.`, btn: '' };
-      if (canHol && (!dash.holiday || oneOff)) status.btn += `<button type="button" class="btn small ghost" id="hol">${dash.holiday ? 'ยกเลิกวันหยุด' : 'วันนี้ร้านหยุด'}</button>`;
-      // without product costs the profit is meaningless (100% margin): say what is missing instead; other gaps are a note
-      const fl = k.profit_flags || {}, flags = Object.values(fl), noCost = !!fl.cost;
-      const profit = !noCost
-        ? R.mlist([['กำไร (ประมาณ)', [
-            R.mrow('กำไรขั้นต้น', baht(k.gross_profit), { delta: R.delta(k.gross_profit, p.gross_profit), sub: 'อัตรากำไร ' + pct(k.margin_pct), href: '#/products' }),
-            R.mrow('ของเสียต่อยอดขาย', pct(k.waste_pct), { sub: 'มูลค่า ' + money(k.waste), tone: Number(k.waste_pct) > 5 ? 'warn' : '', href: '#/products' }),
-            ...(Number(k.markdown) ? [R.mrow('ลดราคาตอนเย็น', money(k.markdown), { href: '#/products' })] : []),
-            ...(Number(k.staff_meals) ? [R.mrow('สวัสดิการทีมงาน', money(k.staff_meals), { sub: 'ราคาทุน', href: '#/products' })] : []),
-            ...(target ? [R.mrow('กำไรสุทธิเดือนนี้ / เป้า', baht(mnp), { sub: `เป้า ${money(target)} · ${Math.round((mnp / target) * 100)}%`, href: '#/invest' })] : [])]]])
-          + (flags.length ? `<p class="muted small" style="padding:4px 4px 0">ตัวเลขยังเป็นค่าประมาณ: ${flags.map(esc).join(' · ')}</p>` : '')
-        : `<div class="pcard"><span class="k">กำไร</span><b>ยังคำนวณกำไรไม่ได้</b><span class="sub">${esc(fl.cost)} ใส่สูตรหรือต้นทุนแล้วระบบจะคำนวณให้</span>
-            <a class="go" href="#/master/products" style="font-weight:600">ใส่สูตร / ต้นทุนสินค้า ›</a></div>`;
-      box.innerHTML = `<div class="full today-bar ${status.tone}"><span class="dot"></span><span class="txt">${status.t}</span>${status.btn}</div>
-        ${todo.length ? `<div class="full">${R.sec('ต้องทำ (' + todo.length + ')')}${R.shortList(todo, 3, '')}</div>` : ''}
-        <a class="pcard full" href="#/sales" style="text-decoration:none;color:inherit">
-          <span class="k">ยอดขาย · ${esc(R.periodLabel())}</span>
-          <span class="big">${baht(k.revenue)} ${R.delta(k.revenue, p.revenue)}</span>
-          <span class="sub">หน้าร้าน ${money(k.storefront)} · Delivery ${money(k.delivery)} · ${qty(k.orders)} ออเดอร์</span></a>
-        <div class="full">${R.mlist([['เงิน', [
-            R.mrow('เงินทุกบัญชี', baht(n.cash), { sub: Number(n.min_working_capital) ? 'เงินหมุนขั้นต่ำ ' + money(n.min_working_capital) : '', tone: low ? 'bad' : '', href: '#/cashflow' }),
-            R.mrow('เงินสดหน้าร้าน', baht(n.drawer), { href: '#/accounts' }),
-            R.mrow('รอรับจาก Delivery', baht(n.delivery_receivable), { href: '#/delivery' }),
-            R.mrow('ค้างจ่าย', baht(n.payables), { href: '#/approvals' }),
-            ...(Number(n.owed_reimburse) ? [R.mrow('ร้านค้างคืนพนักงาน / เจ้าของ', baht(n.owed_reimburse), { tone: 'warn', href: '#/expenses' })] : [])]]])}</div>
-        <div class="full">${profit}</div>`;
-      on(box.querySelector('[data-sv]'), () => R.setStaffView(true));
-      on(box.querySelector('#hol'), (ev) => R.busy(ev.currentTarget, async () => {
-        const d = R.settingVal('closed_dates', []) || [], t = R.today();
-        await R.api('settings.save', { key: 'closed_dates', value: d.includes(t) ? d.filter((x) => x !== t) : [...d, t], confirmed: true });
-        await R.loadBoot(); R.toast(d.includes(t) ? 'ยกเลิกวันหยุดวันนี้แล้ว' : 'ตั้งวันนี้เป็นวันหยุดร้านแล้ว ไม่ต้องปิดยอดและไม่เตือน'); R.route();
-      }));
-    });
+    const h = await R.api('dashboard.home', {});
+    const st = h.status, sa = h.sales;
+    const canHol = R.can('settings.manage') && !h.close, oneOff = (R.settingVal('closed_dates', []) || []).includes(R.today());
+    const flags = Object.values(st.flags || {});
+    const pace = sa.target ? Math.min(100, (sa.month / sa.target) * 100) : 0, mark = sa.target ? Math.min(100, (sa.to_date / sa.target) * 100) : 0;
+    const behind = sa.to_date ? Math.round((1 - sa.month / sa.to_date) * 100) : 0;
+    const ratioTxt = st.ratios.length ? st.ratios.map((r) => `${r.key === 'fruit' ? 'ผลไม้' : 'ลูกชิ้น'} ${Math.round(r.ratio * 100)}%`).join(' · ') : '-';
+    const ratioTone = st.ratios.some((r) => r.limit != null && r.ratio > r.limit) ? 'warn' : st.ratios.length ? 'ok' : 'none';
+    const netTone = st.net_profit < 0 ? 'bad' : st.net_target_to_date && st.net_profit < st.net_target_to_date ? 'warn' : 'ok';
+    const cashTone = st.min_cash && st.cash < st.min_cash ? 'bad' : 'ok';
+    const top = h.todo.slice(0, 4), rest = h.todo.slice(4);
+    const route = (t) => '#/' + (t.kind === 'debt_short' ? 'cashflow' : R.EX_ROUTE[t.kind] || 'dashboard');
+    const lv = h.live, dayPct = lv.target ? Math.min(100, (lv.sales / lv.target) * 100) : 0;
+    const vsLw = lv.last_week ? Math.round(((lv.sales - lv.last_week) / lv.last_week) * 100) : null;
+    const hmax = Math.max(1, ...lv.hours.map((x) => Math.max(x.today, x.avg)));
+    const nowH = Number(lv.now.slice(0, 2));
+    el.innerHTML = `${R.sectTabs('dashboard')}
+      <div class="hb">
+        <div class="hb-head"><span class="muted">${esc(R.date(h.date))} · อัปเดต ${esc(lv.now)} น.</span>
+          ${canHol && (!h.holiday || oneOff) ? `<button type="button" class="btn small ghost" id="hol">${h.holiday ? 'ยกเลิกวันหยุด' : 'วันนี้ร้านหยุด'}</button>` : ''}</div>
+
+        <section class="hb-card">
+          <div class="hb-title"><h2><span class="hb-live"></span>ยอดขายวันนี้</h2>${vsLw != null ? `<span class="pill ${vsLw >= 0 ? 'ok' : 'warn'}">${vsLw >= 0 ? '+' : ''}${vsLw}% เทียบสัปดาห์ก่อน</span>` : ''}</div>
+          <div><span class="hb-big num">${baht(lv.sales)}</span> ${lv.target ? `<span class="muted num">/ เป้าวันนี้ ${money(lv.target)}</span>` : ''}</div>
+          ${lv.target ? `<div class="hb-prog" role="img" aria-label="ยอดวันนี้ ${Math.round(dayPct)}% ของเป้า"><i style="width:${dayPct}%"></i></div>` : ''}
+          <div class="hb-legend"><span>หน้าร้าน ${money(lv.storefront)} · Delivery ${money(lv.delivery)} · ${qty(lv.orders)} ออเดอร์</span><span>${lv.last_at ? 'ล่าสุด ' + R.time(lv.last_at) + ' น.' : 'ยังไม่มีออเดอร์'}</span></div>
+          <div class="hb-hours" role="img" aria-label="ยอดขายรายชั่วโมงวันนี้ เทียบค่าเฉลี่ยวันเดียวกัน 4 สัปดาห์">${lv.hours.map((x) => `<span class="col ${x.h > nowH ? 'later' : ''}" title="${x.h}:00 วันนี้ ${money(x.today)} · เฉลี่ย ${money(x.avg)}">
+            <i style="height:${(x.today / hmax) * 100}%"></i><b style="bottom:${(x.avg / hmax) * 100}%"></b><small>${x.h % 3 === 0 ? x.h : ''}</small></span>`).join('')}</div>
+          <p class="muted small">แท่ง = ยอดแต่ละชั่วโมงวันนี้ · ขีด = ค่าเฉลี่ยวันเดียวกัน 4 สัปดาห์</p>
+          <div class="hb-kpis">${h.kpis.filter((x) => x.key !== 'today').map((x) => {
+            const fill = x.value == null || !x.target ? 0 : x.max ? Math.min(100, (x.target / Math.max(x.value, 0.0001)) * 100) : Math.min(100, (x.value / x.target) * 100);
+            return `<a class="hb-kpi" href="#/${x.href}"><span class="k">${esc(x.label)}</span><b class="num">${kpiVal(x)}</b>
+              <span class="mini ${x.tone}"><i style="width:${fill}%"></i></span><span class="t muted">${kpiTgt(x)}</span></a>`; }).join('')}</div>
+          ${h.tips.length ? `<div class="hb-tips"><b>ควรทำวันนี้</b>${h.tips.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''}
+        </section>
+
+        <section class="hb-card">
+          <div class="hb-title"><h2>เดือนนี้</h2><span class="muted small">${sa.open_done}/${sa.open_all} วันเปิดร้าน</span></div>
+          <div class="hb-verdict ${st.level}"><span class="dot"></span><span><b>${TONE_TXT[st.level]}</b>${st.reasons.length ? ' · ' + esc(st.reasons[0]) : ' · ตัวเลขเดือนนี้เป็นไปตามแผน'}</span></div>
+          <div><span class="hb-big sm num">${baht(sa.month)}</span> ${sa.target ? `<span class="muted num">/ เป้าเดือน ${money(sa.target)}</span>` : '<a class="small" href="#/settings">ตั้งเป้าเดือน</a>'}</div>
+          ${sa.target ? `<div class="hb-prog" role="img" aria-label="ยอดเดือน ${Math.round(pace)}% ของเป้า"><i style="width:${pace}%"></i><b style="left:${mark}%"></b></div>
+          <div class="hb-legend"><span>${Math.round(pace)}% ของเป้า${behind > 0 ? ' · ช้ากว่าเป้า ' + behind + '%' : ''}</span><span>ควรได้ถึงวันนี้ ${money(sa.to_date)}</span></div>
+          ${sa.need_per_day != null ? `<div class="hb-need"><span class="muted">ต้องขายเฉลี่ยอีกวันละ</span><b class="num">${baht(sa.need_per_day)}</b><span class="muted small">เหลือ ${sa.open_left} วันเปิดร้าน</span></div>` : ''}` : ''}
+          <div class="hb-trio">
+            <a class="hb-tile" href="#/sales"><span class="k">กำไรสุทธิเดือนนี้</span><b class="num">${baht(st.net_profit)}</b><span class="s ${netTone}">${st.net_target_to_date ? 'ควรได้ถึงวันนี้ ' + money(st.net_target_to_date) : 'ยังไม่ตั้งเป้ากำไร'}</span></a>
+            <a class="hb-tile" href="#/cashflow"><span class="k">เงินที่ใช้ได้</span><b class="num">${baht(st.cash)}</b><span class="s ${cashTone}">${st.min_cash ? 'ขั้นต่ำ ' + money(st.min_cash) : 'ยังไม่ตั้งขั้นต่ำ'}</span></a>
+            <a class="hb-tile" href="#/cashflow"><span class="k">ต้นทุนวัตถุดิบ</span><b class="num">${esc(ratioTxt)}</b><span class="s ${ratioTone}">สัปดาห์ล่าสุด เทียบเกณฑ์</span></a>
+          </div>
+          ${flags.length ? `<details class="hb-est"><summary><span class="pill warn">ประมาณการ</span> ทำไมกำไรยังเป็นตัวเลขประมาณ</summary><p class="muted small">${flags.map(esc).join(' · ')}</p></details>` : ''}
+        </section>
+
+        <section class="hb-card">
+          <div class="hb-title"><h2>ต้องทำ</h2>${h.todo.length ? `<span class="pill ${h.todo[0].level === 'bad' ? 'bad' : 'warn'}">${h.todo.length} เรื่อง</span>` : '<span class="pill ok">ไม่มีค้าง</span>'}</div>
+          ${h.todo.length ? `<div class="hb-todo">${top.map((t) => `<a href="${route(t)}"><span class="sev ${t.level}"></span><span class="body"><span class="t">${esc(t.text)}</span>${t.sub ? `<span class="d">${esc(t.sub)}</span>` : ''}</span><span class="go">${esc(t.act || 'ดู')}</span></a>`).join('')}
+            ${rest.length ? `<a href="#/approvals"><span class="sev info"></span><span class="body"><span class="t">อีก ${rest.length} เรื่อง</span><span class="d">${esc(rest.slice(0, 2).map((t) => t.text).join(' · '))}${rest.length > 2 ? ' …' : ''}</span></span><span class="go">ดูทั้งหมด</span></a>` : ''}</div>`
+            : '<p class="muted">ไม่มีเรื่องค้าง วันนี้ทำครบแล้ว</p>'}
+        </section>
+
+        <a class="hb-nav" href="#/cashflow"><span><b>บริหารกระแสเงินสด</b><span class="muted small">เตรียมเงินรายเดือน · ผ่อนเงินกู้ลงทุน · ต้นทุนและงบ</span></span><span class="go">เปิด ›</span></a>
+      </div>`;
+    // live: refresh the overview every minute while it is on screen
+    clearTimeout(R._hbTimer);
+    R._hbTimer = setTimeout(() => { if (location.hash.replace('#/', '') === 'dashboard' && !document.querySelector('.modal')) R.route(); }, 60000);
+    on(el.querySelector('#hol'), (ev) => R.busy(ev.currentTarget, async () => {
+      const d = R.settingVal('closed_dates', []) || [], t = R.today();
+      await R.api('settings.save', { key: 'closed_dates', value: d.includes(t) ? d.filter((x) => x !== t) : [...d, t], confirmed: true });
+      await R.loadBoot(); R.toast(d.includes(t) ? 'ยกเลิกวันหยุดวันนี้แล้ว' : 'ตั้งวันนี้เป็นวันหยุดร้านแล้ว ไม่ต้องปิดยอดและไม่เตือน'); R.route();
+    }));
   });
 
+  // ------------------------------------------------------------ cost details of a month (overview)
+  const GRP_HELP = { A: 'ขึ้นลงตามยอดขาย', B: 'จ่ายทุกเดือน ไม่ว่าขายได้เท่าไร', C: 'ไม่นับในกำไร: ผ่อนเงินกู้ลงทุน ทุน เงินลงทุน ถอนกำไร' };
+  const RATIO = { fruit: 'ผลไม้', meatball: 'ลูกชิ้น', packaging: 'แพ็กเกจจิ้ง' };
+  R.costCard = async function (host, month) {
+    const m0 = month || R.today().slice(0, 8) + '01', prevM = R.addDays(m0, -1).slice(0, 8) + '01';
+    const c = await R.api('report.costs', { month: m0 }), sm = c.summary, over = Number(c.over_alert_pct) || 0.1;
+    const est = (r) => (r.estimate ? ' <span class="pill warn">ประมาณการ</span>' : '');
+    const visible = c.rows.filter((r) => Number(r.used) || r.budget_month != null || r.has_children);
+    const rowsOf = (g) => {
+      const list = visible.filter((r) => r.grp === g), top = list.filter((r) => !r.parent_id || !list.some((x) => x.id === r.parent_id));
+      return top.flatMap((r) => [r, ...list.filter((x) => x.parent_id === r.id).map((x) => ({ ...x, _sub: true }))]);
+    };
+    const diffCell = (r) => {
+      if (r.diff == null) return '-';
+      const d = Number(r.diff), bad = Number(r.budget_to_date) > 0 && Number(r.used) > Number(r.budget_to_date) * (1 + over);
+      return `<span class="${bad ? 'pill warn' : d > 0 ? '' : 'muted'}">${d > 0 ? '+' : ''}${money(d)}</span>`;
+    };
+    const table = (g) => R.table([
+      { l: 'หมวด', f: (r) => `${r._sub ? '<span class="muted">· </span>' : ''}${esc(r.name)}${est(r)}${r.rounds ? `<br><span class="muted small">${r.rounds} รอบจ่ายในเดือนนี้</span>` : ''}${r.budget_method === 'pct' && r.budget_pct != null ? `<br><span class="muted small">งบ ${qty(Number(r.budget_pct) * 100)}% ของยอดขาย${r.pct_base && r.pct_base.startsWith('pcat:') ? r.pct_base.slice(5) : ''}</span>` : ''}` },
+      { l: 'งบ/เดือน', num: true, f: (r) => (r.budget_month == null ? '-' : money(r.budget_month)) },
+      { l: 'ใช้จริงถึงวันนี้', num: true, main: true, f: (r) => money(r.used) },
+      { l: 'ควรใช้ถึงวันนี้', num: true, f: (r) => (r.budget_to_date == null ? '-' : money(r.budget_to_date)) },
+      { l: 'ส่วนต่าง', num: true, f: diffCell },
+      { l: '% ยอดขาย', num: true, f: (r) => (r.pct_of_sales == null ? '-' : qty(r.pct_of_sales) + '%') }], rowsOf(g), { click: 'cat', empty: 'ยังไม่มีรายการ' });
+    const tot = (g, k) => c.rows.filter((r) => r.grp === g && !r.parent_id).reduce((t, r) => t + (Number(r[k]) || 0), 0);
+    const weeks = c.weeks.slice(-6), keys = Object.keys(weeks[weeks.length - 1]?.ratios || {}).filter((k) => RATIO[k]);
+    const target = Number(sm.net_target) || 0;
+    host.innerHTML = `<div class="card">
+      <div class="sec-title" style="padding:0"><h2>รายละเอียดต้นทุน · ${esc(R.date(m0).replace(/^\d+\s/, ''))}</h2>
+        <span class="chips"><button type="button" class="chip" data-m="${R.today().slice(0, 8)}01" aria-pressed="${m0 === R.today().slice(0, 8) + '01'}">เดือนนี้</button><button type="button" class="chip" data-m="${prevM}" aria-pressed="${m0 === prevM}">เดือนก่อน</button></span></div>
+      <p class="muted small">ข้อมูลชุดเดียวกับหน้าค่าใช้จ่าย รับของ จ่ายค่าจ้าง และเงินเข้า Delivery · ถึงวันที่ ${R.date(c.to)} (${c.elapsed}/${c.days} วัน)</p>
+      ${R.mlist([['', [
+        R.mrow('ยอดขาย', baht(sm.sales), { sub: c.sales_target ? 'เป้าเดือน ' + money(c.sales_target) : '' }),
+        R.mrow('− ต้นทุนผันแปร (A)', money(sm.var_costs), { sub: Number(sm.sales) ? Math.round((sm.var_costs / sm.sales) * 1000) / 10 + '% ของยอดขาย' : '' }),
+        R.mrow('= กำไรขั้นต้น', baht(sm.gross_profit)),
+        R.mrow('− ค่าใช้จ่ายคงที่ (B)', money(sm.fixed_costs)),
+        R.mrow('= กำไรสุทธิ', baht(sm.net_profit), { tone: Number(sm.net_profit) < 0 ? 'bad' : target && Number(sm.net_profit) >= Number(sm.net_target_to_date) ? 'ok' : '',
+          sub: target ? `เป้าเดือน ${money(target)} · ถึงวันนี้ควรได้ ${money(sm.net_target_to_date)}` : 'ยังไม่ได้ตั้งเป้ากำไร (ตั้งค่าร้าน)' })]]])}
+      ${Object.keys(sm.flags || {}).length ? `<p class="muted small"><span class="pill warn">ประมาณการ</span> ${Object.values(sm.flags).map(esc).join(' · ')}</p>` : ''}
+      ${c.five_paydays ? '<div class="note info">เดือนนี้มีรอบจ่ายค่าจ้าง 5 รอบ งบค่าจ้างคิดตามรอบจริง จึงสูงกว่าเดือนปกติ</div>' : ''}
+      ${['A', 'B'].map((g) => `<details ${g === 'A' ? 'open' : ''} style="margin-top:10px"><summary><b>${esc(R.GRP[g])}</b> · ใช้ ${money(tot(g, 'used'))}${tot(g, 'budget_to_date') ? ' / ควรใช้ ' + money(tot(g, 'budget_to_date')) : ''}
+          <span class="muted small">(${GRP_HELP[g]})</span></summary><div style="margin-top:8px">${table(g)}</div></details>`).join('')}
+      <details style="margin-top:10px"><summary><b>${esc(R.GRP.C)}</b> · ${money(tot('C', 'used'))} <span class="muted small">(${GRP_HELP.C})</span></summary>
+        <div style="margin-top:8px">${R.table([{ l: 'รายการ', f: (r) => esc(r.name) }, { l: 'เดือนนี้', num: true, main: true, f: (r) => money(r.used) }], c.rows.filter((r) => r.grp === 'C'), { empty: '-' })}
+        <p class="muted small">ผ่อนเงินกู้ลงทุน เงินเติมจากเจ้าของ เงินลงทุน และถอนกำไร บันทึกที่หน้า <a href="#/cashflow">เงิน</a> ไม่หักจากกำไร</p></div></details>
+      ${keys.length ? `<h2 style="margin-top:14px">สัดส่วนต้นทุนรายสัปดาห์</h2>
+        ${R.table([{ l: 'สัปดาห์', f: (w) => `${R.date(w.from).replace(/\s\d{4}$/, '')} – ${R.date(w.to).replace(/\s\d{4}$/, '')}${w.complete ? '' : ' <span class="muted small">(ยังไม่จบ)</span>'}` },
+          ...keys.map((k) => ({ l: RATIO[k] + (c.limits[k] != null ? ' (≤ ' + Math.round(c.limits[k] * 100) + '%)' : ''), num: true, f: (w) => {
+            const x = w.ratios[k] || {}; if (x.ratio == null) return '-';
+            const pc = Math.round(x.ratio * 1000) / 10, bad = c.limits[k] != null && x.ratio > c.limits[k];
+            return `<span class="${bad ? 'pill warn' : ''}">${pc}%</span><br><span class="muted small">${money(x.purchase)} / ${money(x.sales)}</span>`; } }))], weeks.slice().reverse())}
+        <p class="muted small">ยอดซื้อในหมวด ÷ ยอดขายสินค้าที่ใช้หมวดนั้น · เกินเกณฑ์ 2 สัปดาห์ติด ระบบแจ้งให้เช็กราคาซื้อ yield ของเสีย และขนาดกล่อง</p>` : ''}
+      ${c.missing_docs.length ? `<a class="row" href="#/expenses" data-docs style="margin-top:10px"><span class="body"><span class="t">รอเอกสาร ${c.missing_docs.length} รายการ</span><span class="s">ค่าใช้จ่ายที่จ่ายแล้วแต่ยังไม่แนบใบเสร็จ / สลิป</span></span></a>` : ''}
+    </div>`;
+    host.querySelectorAll('[data-m]').forEach((b) => b.addEventListener('click', () => R.costCard(host, b.dataset.m).catch(R.fail)));
+    on(host.querySelector('[data-docs]'), () => R.store.set('exp.tab', 'docs'));
+    R.bindRows(host, 'cat', async (id) => {
+      const r = c.rows.find((x) => x.id === id); if (!r) return;
+      if (r.auto_source) { location.hash = '#/delivery'; return; }
+      const list = (await R.api('expense.list', { category_id: id, from: c.from, to: c.to })).filter((x) => x.status !== 'ยกเลิก');
+      const md = R.modal(r.name, `<p class="muted small">${R.date(c.from)} – ${R.date(c.to)} · ${list.length} รายการ รวม ${baht(list.reduce((t, x) => t + Number(x.amount), 0))}</p>
+        ${R.list(list.map((x) => R.row({ data: { x: x.id }, icon: 'wallet', t: esc(x.description), s: `${R.dt(x.occurred_at)} · ${esc(x.category_name || '')} · ${esc(x.created_by_name || '')}${x.attachments.length ? ' · มีหลักฐาน ' + x.attachments.length : ' · ไม่มีหลักฐาน'}`,
+          v: baht(x.amount), pill: R.statusPill(x.status) })), 'ยังไม่มีรายการในเดือนนี้')}`);
+      md.el.querySelectorAll('[data-x]').forEach((b) => b.addEventListener('click', () => { md.close(); R.expenseSheet(list.find((y) => y.id === b.dataset.x), () => R.costCard(host, m0).catch(R.fail)); }));
+    });
+  };
+
   // ------------------------------------------------------------ 2. sales
+  // best sellers, and one concrete thing to do per product (order more, buy less, raise the price, mark down, stop selling)
+  const ACT = { more: ['ok', 'สั่งเพิ่ม'], price: ['warn', 'ขึ้นราคา'], markdown: ['warn', 'ลดราคาเย็น'], less: ['warn', 'ลดซื้อ'], stop: ['bad', 'เลิกขาย'] };
+  const U = (u) => (u === 'กิโลกรัม' ? 'กก.' : u || '');
+  function advise(x, prev, cur, total, rank, st) {
+    const pv = prev ? Number(prev.revenue) : 0, rev = Number(x.revenue), cv = cur ? Number(cur.revenue) : rev, trend = pv > 0 ? (cv - pv) / pv : null;
+    const share = total ? rev / total : 0, q = Number(x.qty), uc = x.cost_known && q ? Number(x.cost) / q : null;
+    const minM = /ผลไม้/.test(x.category || '') ? 0.35 : 0.45, m = rev && x.cost_known ? (rev - Number(x.cost)) / rev : null;
+    const waste = q ? Number(x.waste_qty || 0) / q : 0, days = st ? st.days_left : null;
+    const out = { trend };
+    if (st && days != null && days <= 1.5 && Number(st.suggest) > 0 && (rank < 3 || (trend != null && trend >= 0.2)))
+      return { ...out, a: 'more', item: `${st.name} ~${Math.ceil(Number(st.suggest))} ${U(st.unit)}`, text: `สั่ง${st.name}เพิ่ม ~${Math.ceil(Number(st.suggest))} ${U(st.unit)}`, why: `${days <= 0 ? 'ของหมดแล้ว' : 'เหลือพอ ' + qty(days) + ' วัน'} · ขายได้อันดับ ${rank + 1}`, impact: rev };
+    if (m != null && m < minM && uc > 0) { const np = Math.ceil(uc / (1 - minM) / 5) * 5;
+      if (np > Number(x.price)) return { ...out, a: 'price', item: `${x.name} เป็น ฿${np}`, text: `ขึ้นราคา${x.name}เป็น ฿${np}`, why: `ต้นทุน ฿${qty(Math.round(uc * 100) / 100)}/${x.unit || 'ชิ้น'} กำไรตอนนี้ ${Math.round(m * 100)}% ต่ำกว่าขั้นต่ำ ${minM * 100}%`, impact: (np - Number(x.price)) * q }; }
+    if (waste > 0.1) return { ...out, a: 'markdown', item: x.name, text: `ขายลดราคา${x.name}หลัง 19:00 และซื้อลด ~${Math.round(waste * 100)}%`, why: `เสีย ${qty(x.waste_qty)} ${x.unit || ''} จากที่ขาย ${qty(q)}`, impact: uc ? Number(x.waste_qty) * uc : rev * waste };
+    if (share < 0.03 && (!q || (trend != null && trend <= -0.25)))
+      return { ...out, a: 'stop', item: x.name, text: `พิจารณาเลิกขาย${x.name}`, why: `ยอดแค่ ${Math.round(share * 1000) / 10}% ของร้าน${trend != null && trend <= -0.25 ? ' และลดลง ' + Math.round(-trend * 100) + '%' : ''} · ใช้ที่ตู้กับเงินไปกับตัวที่ขายดีกว่า`, impact: rev * 0.5 };
+    if (st && days != null && days > 4 && trend != null && trend <= -0.25)
+      return { ...out, a: 'less', item: st.name, text: `ลดซื้อ${st.name}รอบหน้า`, why: `ของยังพอ ~${Math.floor(days)} วัน ยอดลดลง ${Math.round(-trend * 100)}% · ไม่ต้องซื้อจนถึง ${R.date(R.addDays(R.today(), Math.floor(days) - 1)).replace(/\s\d{4}$/, '')}`, impact: rev * -trend };
+    return out;
+  }
+  function productAdvice(pr, pp, pc, sb) {
+    const total = pr.products.reduce((t, x) => t + Number(x.revenue), 0);
+    const prev = Object.fromEntries((pp.products || []).map((x) => [x.product_id, x])), cur = Object.fromEntries((pc.products || []).map((x) => [x.product_id, x]));
+    const stockOf = (name) => (sb || []).find((s) => (s.products || []).includes(name));
+    const list = pr.products.filter((x) => x.active !== false || Number(x.qty)).slice().sort((a, b) => b.revenue - a.revenue)
+      .map((x, i) => ({ ...x, j: advise(x, prev[x.product_id], cur[x.product_id], total, i, stockOf(x.name)) }));
+    const acts = list.filter((x) => x.j.a).sort((a, b) => b.j.impact - a.j.impact).slice(0, 4);
+    // one phrase per kind of action: "สั่งเพิ่ม A ~14 กก., B ~15 กก. · ขึ้นราคา C เป็น ฿45"
+    const VERB = { more: 'สั่งเพิ่ม', price: 'ขึ้นราคา', markdown: 'ลดราคาหลัง 19:00', less: 'ลดซื้อรอบหน้า', stop: 'พิจารณาเลิกขาย' };
+    const kinds = [...new Set(acts.map((x) => x.j.a))], brief = kinds.map((k) => VERB[k] + ' ' + acts.filter((x) => x.j.a === k).map((x) => x.j.item).join(', ')).join(' · ');
+    const row = (x, i) => `<div class="pb-row"><span class="rk">${i + 1}</span><span class="nm">${x.emoji ? esc(x.emoji) + ' ' : ''}${esc(x.name)}<small class="muted">${qty(x.qty)} ${esc(x.unit || '')}</small></span>
+      <span class="tr num" style="color:${x.j.trend == null ? 'var(--muted)' : x.j.trend < -0.1 ? 'var(--bad)' : x.j.trend > 0.1 ? 'var(--ok)' : 'var(--muted)'}">${x.j.trend == null ? '-' : (x.j.trend > 0 ? '+' : '') + Math.round(x.j.trend * 100) + '%'}</span>
+      <b class="num">${money(x.revenue)}</b>${x.j.a ? `<span class="pill ${ACT[x.j.a][0]}">${ACT[x.j.a][1]}</span>` : '<span></span>'}</div>`;
+    return `<div class="card full" style="min-width:0"><div class="hb-title"><h2>สินค้าขายดี</h2><span class="muted small">% เทียบช่วงก่อน</span></div>
+      <div class="pb-list">${list.slice(0, 5).map(row).join('')}</div>
+      ${list.length > 5 ? `<details class="pb-more"><summary>ดูทั้งหมด ${list.length} รายการ</summary><div class="pb-list">${list.slice(5).map((x, i) => row(x, i + 5)).join('')}</div></details>` : ''}
+      ${acts.length ? `<details class="pb-tip"><summary><span class="cl"><b>ควรทำ</b> ${esc(brief)}</span></summary>
+        ${acts.map((x) => `<p><b>${esc(x.j.text)}</b><br><span class="muted">${esc(x.j.why)}</span></p>`).join('')}</details>` : ''}</div>`;
+  }
+
   R.def('sales', { title: 'ยอดขาย', tab: 'sales' }, async function (el) {
     await periodPage(el, 'sales', async (box, r) => {
-      const [ov, rs] = await Promise.all([R.api('report.overview', r), R.api('report.sales', { ...r, group: 'day' })]);
+      const [ov, rs, pr, sb] = await Promise.all([R.api('report.overview', r), R.api('report.sales', { ...r, group: 'day' }), R.api('report.products', r),
+        R.can('stock.view') ? R.api('stock.balance', {}) : []]);
       const k = ov.kpi, p = ov.prev;
+      // the trend compares whole days only: when the period ends today, both windows shift back one day
+      const sh = r.to >= R.today() ? -1 : 0;
+      const [pc, pp] = sh ? await Promise.all([R.api('report.products', { from: R.addDays(r.from, sh), to: R.addDays(r.to, sh) }), R.api('report.products', { from: R.addDays(ov.prev_from, sh), to: R.addDays(ov.prev_to, sh) })])
+        : [pr, await R.api('report.products', { from: ov.prev_from, to: ov.prev_to })];
       const chs = [...new Set(rs.rows.map((x) => x.channel))];
       const days = [...new Set(rs.rows.map((x) => x.period))].sort().reverse().map((d) => {
         const row = { date: d, total: 0, orders: 0, discount: 0, fee: 0 };
@@ -90,6 +224,7 @@
       box.innerHTML = `<div class="kpis full">${R.kpi('ยอดขายรวม', baht(k.revenue), R.delta(k.revenue, p.revenue))}${R.kpi('ออเดอร์', qty(k.orders), R.delta(k.orders, p.orders))}
           ${R.kpi('เฉลี่ยต่อออเดอร์', baht(k.avg_ticket), R.delta(k.avg_ticket, p.avg_ticket))}${R.kpi('ส่วนลด / โปร', baht(k.discount), R.delta(k.discount, p.discount, true), Number(k.markdown) ? 'ลดราคาตอนเย็น ' + money(k.markdown) : '')}</div>
         <div class="card full">${R.lineChart(ov.series.map((s) => ({ ...s, label: dayLabel(s.date) })), [{ key: 'storefront', label: 'หน้าร้าน' }, { key: 'delivery', label: 'Delivery' }, { key: 'orders', label: 'ออเดอร์', color: '#8a98aa' }], { title: 'ยอดขายรายวัน' })}</div>
+        ${productAdvice(pr, pp, pc, sb)}
         <div class="card"><h2>ตามช่องทาง</h2>${R.donut(ov.channels.map((c) => ({ label: c.name, value: c.net })), { center: 'ยอดขาย' })}</div>
         <div class="card"><h2>เทียบช่วงก่อนหน้า</h2>
           <div class="sum-row"><span>ช่วงนี้</span><b>${baht(k.revenue)}</b></div><div class="sum-row"><span>ช่วงก่อน ${R.date(ov.prev_from)} – ${R.date(ov.prev_to)}</span><span>${baht(p.revenue)}</span></div>
@@ -316,7 +451,7 @@
   R.def('invest', { title: 'เงินลงทุน / คืนทุน', back: 'more' }, async function (el) {
     const [pb, cf] = await Promise.all([R.api('payback.summary', {}), R.api('cashflow.summary', {})]);
     const manage = R.can('cashflow.manage');
-    const KIND = { capital_in: 'ลงทุนเพิ่ม (เงินสด)', loan_in: 'กู้ยืม', capital_return: 'ถอนเงินเจ้าของ / คืนทุน', loan_repayment: 'ชำระหนี้', owner_paid: 'เจ้าของจ่ายแทนร้าน' };
+    const KIND = { capital_in: 'ลงทุนเพิ่ม (เงินสด)', loan_in: 'กู้ยืม', capital_return: 'ถอนเงินเจ้าของ / คืนทุน', loan_repayment: 'ผ่อนเงินกู้ลงทุน', owner_paid: 'เจ้าของจ่ายแทนร้าน' };
     el.innerHTML = `${R.sectTabs('invest')}
       ${pb.needs_review ? `<div class="note">มีรายการลงทุน ${pb.needs_review} รายการที่มาจากข้อมูลก่อนหน้า ยังต้องตรวจทาน ตัวเลขคืนทุนจึงยังไม่ใช่ตัวเลขจริง</div>` : ''}
       <div class="kpis">${R.kpi('เงินลงทุนรวม', baht(pb.investment_total), '', 'ได้คืนภายหลัง ' + money(pb.refundable))}${R.kpi('ฐานคืนทุน', baht(pb.payback_base), '', 'ไม่รวมส่วนที่ได้คืน')}
@@ -328,7 +463,7 @@
         { l: 'ได้คืนภายหลัง', num: true, f: (x) => money(x.refundable_amount) }, { l: 'นับเป็นเงินลงทุน', f: (x) => (x.counts_as_investment ? 'ใช่' : 'ไม่') }, { l: 'ใช้คิดคืนทุน', f: (x) => (x.in_payback ? 'ใช่' : 'ไม่') },
         { l: 'สถานะข้อมูล', f: (x) => (x.data_status === 'ยืนยันแล้ว' ? '<span class="pill ok">ยืนยันแล้ว</span>' : `<span class="pill warn">${esc(x.data_status)}</span>`) }], pb.items, { click: manage ? 'inv' : null, empty: 'ยังไม่มีรายการลงทุน' })}
       <p class="muted small" style="padding:0 4px">ค่าเช่ารายเดือนเป็นค่าใช้จ่าย ไม่นับเป็นเงินลงทุน</p>
-      ${R.sec('หนี้')}<div class="stats">${R.stat('หนี้ตั้งต้น', baht(pb.opening_debt), pb.opening_debt_confirmed ? '' : 'ยังไม่ยืนยัน')}${R.stat('ชำระแล้ว', baht(pb.debt_paid))}${R.stat('คงเหลือ', baht(pb.debt_left))}${R.stat('ทุนเงินสดที่ใส่', baht(pb.cash_capital_in), 'ถอนแล้ว ' + money(pb.capital_returned))}</div>
+      ${R.sec('เงินกู้ลงทุน')}<div class="stats">${R.stat('เงินกู้ลงทุนตั้งต้น', baht(pb.opening_debt), pb.opening_debt_confirmed ? '' : 'ยังไม่ยืนยัน')}${R.stat('ผ่อนแล้ว', baht(pb.debt_paid))}${R.stat('คงเหลือ', baht(pb.debt_left))}${R.stat('ทุนเงินสดที่ใส่', baht(pb.cash_capital_in), 'ถอนแล้ว ' + money(pb.capital_returned))}</div>
       ${R.sec('ประวัติทุน ถอน และการใช้กำไร', '<a href="#/cashflow">บันทึก</a>')}
       ${R.list([...cf.capital_rows.filter((c) => c.kind !== 'investment_item').map((c) => R.row({ static: true, off: c.status === 'cancelled', icon: 'plus', t: KIND[c.kind] || c.kind, s: `${R.date(c.occurred_at)} · ${esc(c.party)}${c.account_name ? ' · ' + esc(c.account_name) : ''}`, v: baht(c.amount) })),
         ...cf.declarations.map((d) => R.row({ static: true, off: d.status === 'cancelled', icon: 'check', t: 'ใช้กำไร · ' + esc(R.PURPOSE[d.purpose] || d.purpose), s: `${R.date(d.declared_at)} · ${esc(d.recipient)}`, v: baht(d.amount) }))], 'ยังไม่มีรายการ')}`;

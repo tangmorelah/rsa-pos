@@ -1,6 +1,6 @@
 /* RSA - POS Assistant service worker: keeps the app shell on the phone so it opens instantly and without signal.
    Data calls to Supabase are never cached. Bump VERSION whenever app files change. */
-const VERSION = 'rsa-v9';
+const VERSION = 'rsa-v10';
 const SHELL = ['./', 'index.html', 'assets/app.css', 'assets/core.js', 'assets/ui.js', 'assets/staff.js', 'assets/owner.js', 'assets/sections.js', 'assets/admin.js',
   'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 

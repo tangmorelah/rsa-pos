@@ -516,9 +516,10 @@ begin
     insert into stock_ledger(stock_item_id, qty, kind, source_type, source_id, unit_cost, created_by)
     values (r.stock_item_id, -r.qty, 'receipt_reversal', 'receipt', v.id, r.unit_cost, u.id);
   end loop;
-  if v.expense_id is not null and exists (select 1 from expenses where id = v.expense_id and status <> 'ยกเลิก') then
-    perform rsa__expense_cancel(u, jsonb_build_object('expense_id', v.expense_id, 'reason', 'ยกเลิกใบรับของ ' || v.receipt_no || ': ' || (p->>'reason')));
-  end if;
+  -- every bill of this receipt (one per cost category) is cancelled with it
+  for r in select id from expenses where (receipt_id = v.id or id = v.expense_id) and status <> 'ยกเลิก' loop
+    perform rsa__expense_cancel(u, jsonb_build_object('expense_id', r.id, 'reason', 'ยกเลิกใบรับของ ' || v.receipt_no || ': ' || (p->>'reason')));
+  end loop;
   perform rsa_audit(u, 'receipt.cancel', 'receipt', v.id::text, jsonb_build_object('status', v.status), jsonb_build_object('status', 'cancelled'),
                     jsonb_build_object('reason', p->>'reason'));
   return rsa_receipt_json(v.id);

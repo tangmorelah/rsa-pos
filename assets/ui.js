@@ -15,7 +15,7 @@
     employee_advance: 'ใช้เงินตัวเองจ่ายไปก่อน ขอเบิกคืนจากร้าน', owner_capital: 'เจ้าของจ่ายให้ร้าน ไม่ขอคืน นับเป็นเงินลงทุนเพิ่ม',
     credit: 'ค้างจ่าย รอบิล หรือให้เจ้าของร้านจ่ายภายหลัง',
   };
-  R.PURPOSE = { owner_draw: 'จ่ายเจ้าของ', capital_return: 'คืนทุน', loan_repayment: 'โปะหนี้', keep_working_capital: 'เก็บเป็นเงินหมุน', reinvest: 'ลงทุนกลับร้าน' };
+  R.PURPOSE = { owner_draw: 'จ่ายเจ้าของ', capital_return: 'คืนทุน', loan_repayment: 'โปะเงินกู้ลงทุน', keep_working_capital: 'เก็บเป็นเงินหมุน', reinvest: 'ลงทุนกลับร้าน' };
   R.settingVal = (k, d) => { const s = R.state.boot && R.state.boot.settings[k]; return s && s.value != null ? s.value : d; };
   // shop holidays (weekly closed days 0 = Sunday, one-off closed dates YYYY-MM-DD)
   R.WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
@@ -232,6 +232,17 @@
     const merchant = (lines.find((l) => /[ก-๙a-zA-Z]{3,}/.test(l) && !/(ใบเสร็จ|receipt|tax|ภาษี|วันที่|date|โอนเงินสำเร็จ|สำเร็จ)/i.test(l)) || '').slice(0, 80);
     return { merchant: payee || merchant, payee, amount, date, time: tm ? `${tm[1].padStart(2, '0')}:${tm[2]}` : null, ref: refm ? refm[1] : null };
   };
+  // expense categories grouped A / B / C (sub-categories under their parent)
+  R.GRP = { A: 'A ต้นทุนผันแปร', B: 'B ค่าใช้จ่ายคงที่', C: 'C ไม่ใช่ค่าใช้จ่าย' };
+  R.catOptions = (cats, sel) => ['A', 'B', 'C'].map((g) => {
+    const list = (cats || []).filter((c) => (c.grp || 'B') === g);
+    if (!list.length) return '';
+    const top = list.filter((c) => !c.parent_id || !list.some((x) => x.id === c.parent_id));
+    const opt = (c, sub) => `<option value="${esc(c.id)}" ${String(c.id) === String(sel) ? 'selected' : ''}>${sub ? '· ' : ''}${esc(c.name)}</option>`;
+    return `<optgroup label="${esc(R.GRP[g])}">${top.map((c) => opt(c) + list.filter((x) => x.parent_id === c.id).map((x) => opt(x, true)).join('')).join('')}</optgroup>`;
+  }).join('');
+  R.isNotCost = (c) => c && (c.grp === 'C') && c.c_kind !== 'advance';
+
   R.loadTesseract = async function () {
     if (window.Tesseract) return window.Tesseract;
     await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'; s.onload = res; s.onerror = () => rej(new Error('โหลดตัวอ่านรูปไม่สำเร็จ กรอกข้อมูลเองได้เลย')); document.head.appendChild(s); });

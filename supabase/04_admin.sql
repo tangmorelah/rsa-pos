@@ -58,6 +58,9 @@ begin
     v_ex := v_ex || jsonb_build_object('kind', 'unconfirmed', 'level', 'info', 'text', 'ยังมีค่าตั้งต้นที่ยังไม่ยืนยัน (ยอดยกมาบัญชี / ค่าธรรมเนียม Delivery)');
   end if;
 
+  -- costs: over budget, cost ratios, recurring bills overdue, missing documents, 5 wage paydays (14_costs.sql)
+  v_ex := v_ex || rsa_cost_alerts(v_today);
+
   select * into v_close from daily_closes where biz_date = v_date;
   return jsonb_build_object(
     'date', v_date,

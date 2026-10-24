@@ -84,7 +84,7 @@ begin
     if not found then perform rsa_err('กรุณาเลือกบัญชีที่จ่ายเงิน'); end if;
     if v_acc.kind <> 'cash' and v_ref is null then perform rsa_err('จ่ายผ่านบัญชีต้องใส่เลขอ้างอิง / เลขที่สลิป'); end if;
   end if;
-  select * into v_cat from expense_categories where name = 'ค่าจ้างพนักงาน';
+  select * into v_cat from expense_categories where code = 'B01' or name = 'ค่าจ้างพนักงาน' order by (code = 'B01') desc nulls last limit 1;
   if not found then select * into v_cat from expense_categories where tax_category = 'เงินเดือนและค่าจ้าง' order by name limit 1; end if;
   -- the cost is the whole wage; only the part not already advanced leaves the account now
   insert into expenses(id, expense_no, occurred_at, category_id, category_name, tax_category, payee, description, amount, status, pay_account_id,
@@ -98,6 +98,11 @@ begin
   values (v_run, v.id, v_from, v_to, v_sys, v_days, nullif(trim(p->>'days_reason'), ''), v_dates, v.daily_wage, v_base, v_ex, v_ext,
     v_gross, v_advt, v_net, v_exp, v_acc.id, v_ref, nullif(trim(p->>'note'), ''), u.id);
   update expenses set advance_run_id = v_run where advance_user_id = v.id and status = 'จ่ายแล้ว' and advance_run_id is null;
+  -- the estimated weekly wage bill of this period is replaced by the real wage (cancelled with a reason, never deleted)
+  update expenses x set status = 'ยกเลิก', cancelled_at = now(), cancelled_by = u.id, replaced_by = v_exp,
+         cancel_reason = 'แทนด้วยค่าจ้างจริง ' || to_char(v_from, 'DD/MM') || '–' || to_char(v_to, 'DD/MM')
+   where x.status in ('รออนุมัติ','รอทำจ่าย') and x.fixed_expense_id is not null and x.tax_category = 'เงินเดือนและค่าจ้าง'
+     and coalesce(x.due_date, rsa_bdate(x.occurred_at)) between v_from and v_to + 6;
   perform rsa_link_attachments(p->'attachment_ids', 'expense', v_exp, u);
   perform rsa_audit(u, 'payroll.pay', 'payroll', v_run::text, null, jsonb_build_object('user', v.display_name, 'from', v_from, 'to', v_to,
     'system_days', v_sys, 'days', v_days, 'daily_wage', v.daily_wage, 'extras', v_ex, 'gross', v_gross, 'advance', v_advt, 'net', v_net));
@@ -284,47 +289,61 @@ begin
     when 'attachment.upload'  then rsa__attachment_upload(u, p)
     when 'attachment.get'     then rsa__attachment_get(u, p)
     when 'export'             then rsa__export2(u, p)
+    when 'expense.update'     then rsa__expense_update(u, p)
+    when 'report.costs'       then rsa__report_costs(u, p)
+    when 'cost.categories'    then rsa__cost_categories(u, p)
+    when 'dashboard.home'     then rsa__dashboard_home(u, p)
+    when 'cashflow.months'    then rsa__cashflow_months(u, p)
     else (select jsonb_build_object('error', 'ไม่รู้จักคำสั่ง ' || p_action))
   end;
 end $$;
 
--- profit: a wage advance is not a cost by itself (the weekly wage that deducts it is)
+-- profit, one formula for the whole system (overview, reports, profit that can be drawn):
+--   sales − variable costs (group A: purchases incl. goods received, delivery GP / ads) = gross profit
+--   gross profit − fixed costs (group B, incl. wages) = net profit; group C (debt, capital, investment, drawings) is never a cost.
+-- Costs count once approved (รอทำจ่าย) or paid, on the expense date. Waste, staff meals and count differences are already
+-- inside the purchases, so they are shown but not deducted again. Recipe cost is kept as a check only.
 create or replace function rsa_profit(p_from date, p_to date) returns jsonb language sql stable as $$
   with o as (
-    select coalesce(sum(total - refunded), 0) revenue, coalesce(sum(cost_total), 0) cogs,
-           bool_and(cost_complete) filter (where status <> 'cancelled') cost_complete,
-           -- unsettled delivery: the platform's real fee when its file was imported, else the % estimate
+    select coalesce(sum(total - refunded), 0) revenue, coalesce(sum(cost_total), 0) recipe_cogs,
            coalesce(sum(coalesce((select po.commission + po.vat + po.other_fee from platform_orders po where po.matched_order_id = orders.id and po.status = 'done' limit 1), est_fee))
              filter (where channel_kind = 'delivery' and settlement_id is null), 0) est_fee_unsettled,
            count(*) filter (where channel_kind = 'delivery' and settlement_id is null
              and not exists (select 1 from platform_orders po where po.matched_order_id = orders.id and po.status = 'done')) fee_guessed
       from orders where status <> 'cancelled' and biz_date between p_from and p_to),
   s as (select coalesce(sum(fee), 0) fee from delivery_settlements where status = 'done' and period_to between p_from and p_to),
-  -- waste is a cost; staff meals are a welfare expense; goods the owner took are an owner drawing (not a shop cost)
   w as (select coalesce(sum(qty * unit_cost) filter (where kind = 'waste'), 0) waste,
                coalesce(sum(qty * unit_cost) filter (where kind = 'staff_meal'), 0) staff_meals,
                coalesce(sum(qty * unit_cost) filter (where kind = 'owner_use'), 0) owner_use
           from waste_records where status = 'recorded' and biz_date between p_from and p_to),
   k as (select coalesce(sum(-l.qty * coalesce(l.unit_cost, 0)), 0) shrink from stock_ledger l join stocktakes t on t.id = l.source_id
          where l.kind = 'count_adjust' and t.context <> 'opening' and rsa_bdate(l.occurred_at) between p_from and p_to),
-  e as (select coalesce(sum(amount), 0) expenses, count(*) filter (where status = 'รออนุมัติ') pending
-          from expenses where status in ('รอทำจ่าย','จ่ายแล้ว','รออนุมัติ') and receipt_id is null and advance_user_id is null
-           and rsa_bdate(occurred_at) between p_from and p_to and status <> 'รออนุมัติ'),
-  ep as (select coalesce(sum(amount), 0) pending_amount from expenses where status = 'รออนุมัติ' and receipt_id is null and advance_user_id is null
-           and rsa_bdate(occurred_at) between p_from and p_to),
+  e as (select coalesce(sum(x.amount) filter (where coalesce(c.grp, 'B') = 'A'), 0) var_cost,
+               coalesce(sum(x.amount) filter (where coalesce(c.grp, 'B') = 'B'), 0) fixed_cost
+          from expenses x left join expense_categories c on c.id = x.category_id
+         where x.status in ('รอทำจ่าย','จ่ายแล้ว') and x.advance_user_id is null and coalesce(c.grp, 'B') <> 'C'
+           and rsa_bdate(x.occurred_at) between p_from and p_to),
+  ep as (select coalesce(sum(x.amount), 0) pending_amount from expenses x left join expense_categories c on c.id = x.category_id
+          where x.status = 'รออนุมัติ' and x.advance_user_id is null and coalesce(c.grp, 'B') <> 'C' and rsa_bdate(x.occurred_at) between p_from and p_to),
+  est as (select count(*) n from expenses x join fixed_expenses f on f.id = x.fixed_expense_id
+           where x.status in ('รอทำจ่าย','จ่ายแล้ว') and x.status <> 'จ่ายแล้ว' and rsa_bdate(x.occurred_at) between p_from and p_to),
   f as (select bool_and(fee_confirmed) fees_confirmed from channels where kind = 'delivery' and active)
   select jsonb_build_object('from', p_from, 'to', p_to,
-    'revenue', o.revenue, 'cogs', o.cogs, 'delivery_fees', s.fee + o.est_fee_unsettled, 'waste', round(w.waste, 2), 'shrink', round(k.shrink, 2),
-    'gross_profit', o.revenue - o.cogs - s.fee - o.est_fee_unsettled,
-    'staff_meals', round(w.staff_meals, 2), 'owner_use', round(w.owner_use, 2),
-    'expenses', e.expenses, 'pending_expenses', ep.pending_amount,
-    'net_profit', round(o.revenue - o.cogs - s.fee - o.est_fee_unsettled - w.waste - w.staff_meals - k.shrink - e.expenses, 2),
-    'complete', coalesce(o.cost_complete, true) and coalesce(f.fees_confirmed, true) and not exists (select 1 from stocktakes where status = 'pending'),
+    'revenue', o.revenue,
+    'cogs', e.var_cost, 'purchases', e.var_cost, 'recipe_cogs', round(o.recipe_cogs, 2),
+    'delivery_fees', s.fee + o.est_fee_unsettled,
+    'var_costs', e.var_cost + s.fee + o.est_fee_unsettled,
+    'gross_profit', round(o.revenue - e.var_cost - s.fee - o.est_fee_unsettled, 2),
+    'fixed_costs', e.fixed_cost, 'expenses', e.fixed_cost, 'pending_expenses', ep.pending_amount,
+    'net_profit', round(o.revenue - e.var_cost - s.fee - o.est_fee_unsettled - e.fixed_cost, 2),
+    'waste', round(w.waste, 2), 'shrink', round(k.shrink, 2), 'staff_meals', round(w.staff_meals, 2), 'owner_use', round(w.owner_use, 2),
+    'complete', coalesce(f.fees_confirmed, true) and o.fee_guessed = 0 and ep.pending_amount = 0 and est.n = 0
+                and not (o.revenue > 0 and e.var_cost = 0),
     'flags', jsonb_strip_nulls(jsonb_build_object(
-       'cost', case when not coalesce(o.cost_complete, true) then 'มีสินค้าที่ยังไม่มีสูตรหรือต้นทุน' end,
+       'purchase', case when o.revenue > 0 and e.var_cost = 0 then 'ยังไม่มียอดซื้อวัตถุดิบ / รับของในช่วงนี้ กำไรจะสูงกว่าจริง' end,
        'fee', case when not coalesce(f.fees_confirmed, true) then 'ค่าธรรมเนียม Delivery ยังไม่ยืนยัน' end,
-       'fee_est', case when o.fee_guessed > 0 then 'ค่าธรรมเนียมบางส่วนเป็นค่าประมาณ (ยังไม่ได้รับเงินหรือนำเข้าไฟล์แพลตฟอร์ม)' end,
-       'count', case when exists (select 1 from stocktakes where status = 'pending') then 'มีการนับสต็อกรออนุมัติ' end,
+       'fee_est', case when o.fee_guessed > 0 then 'ค่า GP Delivery บางส่วนเป็นประมาณการ (ยังไม่ได้รับเงินหรือนำเข้าไฟล์แพลตฟอร์ม)' end,
+       'bill_est', case when est.n > 0 then 'มีค่าใช้จ่ายประจำที่ยังไม่ได้จ่ายจริง (ใช้ยอดประมาณการ)' end,
        'pending', case when ep.pending_amount > 0 then 'มีค่าใช้จ่ายรออนุมัติที่ยังไม่นับรวม' end)))
-  from o, s, w, k, e, ep, f
+  from o, s, w, k, e, ep, est, f
 $$;

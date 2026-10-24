@@ -24,7 +24,8 @@ create or replace function rsa_kpi(p_from date, p_to date) returns jsonb languag
     'waste', (pr.j->>'waste')::numeric,
     'waste_pct', case when o.revenue > 0 then round((pr.j->>'waste')::numeric * 100 / o.revenue, 1) end,
     'staff_meals', (pr.j->>'staff_meals')::numeric, 'owner_use', (pr.j->>'owner_use')::numeric,
-    'expenses', (pr.j->>'expenses')::numeric, 'cash_variance', d.variance, 'closes', d.closes, 'on_time', d.on_time, 'variance_days', d.variance_days,
+    'expenses', (pr.j->>'expenses')::numeric, 'var_costs', (pr.j->>'var_costs')::numeric, 'fixed_costs', (pr.j->>'fixed_costs')::numeric,
+    'cash_variance', d.variance, 'closes', d.closes, 'on_time', d.on_time, 'variance_days', d.variance_days,
     'profit_complete', pr.j->'complete', 'profit_flags', pr.j->'flags')
   from o, md, pr, d
 $$;
@@ -371,7 +372,8 @@ begin
     from capital_entries where kind = 'investment_item' and status = 'done' and counts_as_investment;
   v_profit := (v_av->>'cumulative_net')::numeric;
   v_avg := round((rsa_profit(v_today - 89, v_today)->>'net_profit')::numeric / 3, 2);
-  v_debt := rsa_setting_num('opening_debt', 0);
+  -- debt: one formula everywhere (rsa_debt_left): opening debt + loans taken − repayments
+  v_debt := rsa_setting_num('opening_debt', 0) + (select coalesce(sum(amount), 0) from capital_entries where kind = 'loan_in' and status = 'done');
   select coalesce(sum(amount), 0) into v_paid from capital_entries where kind = 'loan_repayment' and status = 'done';
   return jsonb_build_object(
     'items', (select coalesce(jsonb_agg(to_jsonb(c) order by c.occurred_at), '[]') from capital_entries c where c.kind = 'investment_item' and c.status = 'done'),
@@ -489,10 +491,9 @@ begin
                         where o.channel_kind = 'delivery' and o.status <> 'cancelled' and o.settlement_id is null and o.biz_date + c.settlement_days <= v_today + d),
         'est_sales', round(v_sales * (select count(*) from generate_series(v_today + 1, v_today + d, interval '1 day') g where rsa_is_open(g::date)), 2),
         'payables', (select coalesce(sum(amount), 0) from expenses where status in ('รออนุมัติ','รอทำจ่าย') and coalesce(due_date, rsa_bdate(occurred_at)) <= v_today + d),
-        'fixed', (select coalesce(sum(f.amount), 0) from fixed_expenses f
-                   cross join lateral generate_series(date_trunc('month', v_today) + interval '1 month', v_today + d, interval '1 month') m
-                  where f.active and f.confirmed and f.start_month <= m and (f.end_month is null or f.end_month >= m)
-                    and least((m::date + (f.due_day - 1)), (m + interval '1 month - 1 day')::date) <= v_today + d),
+        -- this month's recurring bills already exist as payables; later months (monthly and weekly) come from the recurring list
+        'fixed', rsa_fixed_upcoming((date_trunc('month', v_today) + interval '1 month')::date, v_today + d),
+        'debt', rsa_debt_due(v_today + d),
         'est_spend', round(v_spend * d, 2)) order by d) from unnest(array[7,14,30]) d),
     'unconfirmed_fixed', (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'amount', amount, 'due_day', due_day)), '[]')
                           from fixed_expenses where active and not confirmed),
@@ -526,8 +527,9 @@ begin
     'stock_items', (select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'code', s.code, 'name', s.name, 'unit', s.unit, 'kind', s.kind) order by s.code nulls last, s.name), '[]')
                    from stock_items s where s.active),
     'units', (select coalesce(jsonb_agg(name order by name), '[]') from units where active),
-    'categories', (select coalesce(jsonb_agg(to_jsonb(c) order by c.name), '[]') from expense_categories c
-                   where c.active and (is_mgr or c.staff_allowed)),
+    'categories', (select coalesce(jsonb_agg(to_jsonb(c) order by coalesce(c.grp, 'B'), c.sort_order, c.code nulls last, c.name), '[]') from expense_categories c
+                   where c.active and c.auto_source is null and (is_mgr or (c.staff_allowed and coalesce(c.grp, 'B') <> 'C'))
+                     and (coalesce(c.grp, 'B') <> 'C' or c.c_kind = 'advance' or rsa_has(u, 'cashflow.manage'))),
     'suppliers', (select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'name', s.name) order by s.name), '[]') from suppliers s where s.active),
     'users', (select coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'display_name', x.display_name, 'role', x.role) order by x.display_name), '[]')
                    from app_users x where x.active),
@@ -540,7 +542,7 @@ create or replace function rsa_setting_keys() returns text[] language sql immuta
   select array['shop_name','close_due_time','cash_variance_tolerance','waste_evidence_required','vat_registered','tax_id',
     'close_time','reminder_times','starting_float','min_working_capital','opening_debt','transport_default','transport_method',
     'market_trip_km','market_trips_per_week','profit_target','evidence_required','waste_reasons','payroll_week_start','product_categories',
-    'markdown_from','closed_weekdays','closed_dates']
+    'markdown_from','closed_weekdays','closed_dates','cost_ratio_limits','budget_over_alert_pct','monthly_plan','debt_schedule','lease_end','kpi_targets']
 $$;
 
 create or replace function rsa__settings_save(u app_users, p jsonb) returns jsonb language plpgsql as $$
@@ -573,6 +575,25 @@ begin
   end if;
   if v_key = 'closed_dates' then
     v_val := (select coalesce(jsonb_agg(d order by d), '[]') from (select distinct t d from jsonb_array_elements_text(v_val) t) x);
+  end if;
+  if v_key = 'cost_ratio_limits' and (jsonb_typeof(v_val) <> 'object'
+     or exists (select 1 from jsonb_each(v_val) t where jsonb_typeof(t.value) <> 'number' or (t.value #>> '{}')::numeric not between 0 and 1)) then
+    perform rsa_err('เกณฑ์ต้นทุนต้องเป็นสัดส่วน 0–1 เช่น ผลไม้ 0.65');
+  end if;
+  if v_key = 'kpi_targets' and (jsonb_typeof(v_val) <> 'object'
+     or exists (select 1 from jsonb_each(v_val) t where jsonb_typeof(t.value) <> 'number' or (t.value #>> '{}')::numeric < 0)) then
+    perform rsa_err('เป้า KPI ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป');
+  end if;
+  if v_key = 'budget_over_alert_pct' and (jsonb_typeof(v_val) <> 'number' or (v_val #>> '{}')::numeric not between 0 and 1) then
+    perform rsa_err('เกณฑ์แจ้งเตือนเกินงบต้องเป็นสัดส่วน 0–1 เช่น 0.1');
+  end if;
+  if v_key = 'monthly_plan' and (jsonb_typeof(v_val) <> 'object'
+     or exists (select 1 from jsonb_each(v_val) t where t.key !~ '^\d{4}-\d{2}$' or jsonb_typeof(t.value) <> 'object')) then
+    perform rsa_err('แผนรายเดือนต้องเป็น { "YYYY-MM": { sales_target, net_profit_target } }');
+  end if;
+  if v_key = 'debt_schedule' and (jsonb_typeof(v_val) <> 'array'
+     or exists (select 1 from jsonb_array_elements(v_val) t where coalesce(t->>'due', '') !~ '^\d{4}-\d{2}-\d{2}$' or jsonb_typeof(t->'amount') <> 'number')) then
+    perform rsa_err('ตารางหนี้ต้องเป็นรายการ { due: YYYY-MM-DD, amount }');
   end if;
   if v_key in ('waste_evidence_required','vat_registered','evidence_required') and jsonb_typeof(v_val) <> 'boolean' then perform rsa_err('ค่านี้ต้องเป็น ใช่ / ไม่ใช่'); end if;
   select to_jsonb(s) into v_before from settings s where key = v_key;

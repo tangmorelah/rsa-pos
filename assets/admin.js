@@ -17,7 +17,7 @@
       ['name', 'ชื่อรายการ', 'text', { req: true }], ['unit', 'หน่วยหลักของสต็อก (เช่น กิโลกรัม)', 'unit', { req: true }],
       ['count_units', 'หน่วยนับอื่นที่พนักงานใช้ได้', 'countunits'],
       ['kind', 'ประเภท', 'seg', { o: [['raw', 'วัตถุดิบ'], ['packaging', 'บรรจุภัณฑ์'], ['goods', 'สินค้าสำเร็จรูป']] }],
-      ['min_qty', 'เตือนเมื่อเหลือต่ำกว่า', 'number'], ['reorder_qty', 'จำนวนที่แนะนำให้สั่ง', 'number'], ['code', 'รหัส', 'text'], ['default_supplier_id', 'ซัพพลายเออร์หลัก', 'supplier']],
+      ['min_qty', 'เตือนเมื่อเหลือต่ำกว่า', 'number'], ['reorder_qty', 'จำนวนที่แนะนำให้สั่ง', 'number'], ['code', 'รหัส', 'text'], ['cost_category_id', 'หมวดต้นทุน (แยกยอดซื้อตอนรับของ เช่น ผลไม้ ลูกชิ้น แพ็กเกจจิ้ง)', 'costcat'], ['default_supplier_id', 'ซัพพลายเออร์หลัก', 'supplier']],
       row: (r) => ({ t: esc((r.code ? r.code + ' · ' : '') + r.name), s: `${esc(r.unit)}${(r.count_units || []).length ? ' · นับเป็น ' + r.count_units.map((c) => esc(c.unit) + '≈' + R.qty(c.factor)).join(', ') : ''} · เตือนเมื่อต่ำกว่า ${R.qty(r.min_qty)}`, v: r.avg_cost ? 'ทุน ' + money(r.avg_cost) : '' }) },
     promotions: { t: 'โปรโมชัน', icon: 'tag', fields: [
       ['name', 'ชื่อโปรโมชัน', 'text', { req: true }], ['rule', 'วิธีคิด', 'seg', { o: [['bundle', 'ซื้อเป็นชุด (N ชิ้น ราคา P)'], ['percent', 'ลดเป็น %'], ['amount_each', 'ลดบาทต่อชิ้น']] }],
@@ -45,8 +45,19 @@
       ['return_terms', 'เงื่อนไขคืนของ / ของขาด / เสียหาย', 'text'], ['priority', 'สถานะ', 'seg', { o: [['primary', 'ร้านหลัก'], ['backup', 'ร้านสำรอง']] }], ['note', 'หมายเหตุ', 'text']],
       row: (r) => ({ t: esc(r.name), s: [r.supplies, r.phone, r.priority === 'backup' ? 'ร้านสำรอง' : ''].filter(Boolean).map(esc).join(' · ') || 'ยังไม่มีรายละเอียด', v: '' }) },
     expense_categories: { t: 'หมวดค่าใช้จ่าย', icon: 'receipt', fields: [
-      ['name', 'ชื่อหมวด', 'text', { req: true }], ['tax_category', 'หมวดทางภาษี / บัญชี', 'text'], ['staff_allowed', 'พนักงานบันทึกได้', 'bool']],
-      row: (r) => ({ t: esc(r.name), s: `${esc(r.tax_category || '-')}${r.staff_allowed ? ' · พนักงานบันทึกได้' : ' · เฉพาะเจ้าของร้าน'}`, v: '' }) },
+      ['name', 'ชื่อหมวด', 'text', { req: true }],
+      ['grp', 'กลุ่ม', 'seg', { o: [['A', 'A ต้นทุนผันแปร'], ['B', 'B ค่าใช้จ่ายคงที่'], ['C', 'C ไม่ใช่ค่าใช้จ่าย']] }],
+      ['parent_id', 'อยู่ใต้หมวด (หมวดย่อย)', 'costcat'], ['code', 'รหัส', 'text'],
+      ['budget_method', 'วิธีตั้งงบ', 'seg', { o: [['amount', 'จำนวนเงิน / เดือน'], ['pct', '% ของยอดขาย'], ['fixed', 'ตามค่าใช้จ่ายประจำ (รอบจ่ายจริง)']] }],
+      ['budget_amount', 'งบ / เดือน (บาท)', 'number'], ['budget_pct', 'งบเป็นสัดส่วนของยอดขาย (0.46 = 46%)', 'number'],
+      ['pct_base', 'คิด % จากยอดขายของ', 'pctbase'], ['channel_id', 'แอป Delivery (GP / โฆษณา)', 'channel'],
+      ['ratio_key', 'ใช้ดูสัดส่วนต้นทุนรายสัปดาห์', 'seg', { o: [['', 'ไม่ใช้'], ['fruit', 'ผลไม้'], ['meatball', 'ลูกชิ้น'], ['packaging', 'แพ็กเกจจิ้ง']] }],
+      ['c_kind', 'กลุ่ม C บันทึกเป็น', 'seg', { o: [['', '-'], ['loan_repayment', 'ผ่อนเงินกู้ลงทุน'], ['capital_in', 'ทุนเจ้าของ'], ['investment_item', 'เงินลงทุน'], ['owner_draw', 'ถอนกำไร'], ['advance', 'เบิกค่าแรง']] }],
+      ['budget_confirmed', 'ยืนยันงบแล้ว (ไม่ติดป้ายประมาณการ)', 'bool'],
+      ['tax_category', 'หมวดทางภาษี / บัญชี', 'text'], ['staff_allowed', 'พนักงานบันทึกได้', 'bool'], ['sort_order', 'ลำดับแสดง', 'number']],
+      row: (r) => ({ t: `${r.code ? esc(r.code) + ' · ' : ''}${esc(r.name)}`, s: `${esc(R.GRP[r.grp || 'B'])}${r.auto_source ? ' · ดึงจากเงินเข้า Delivery อัตโนมัติ' : ''}`
+        + `${r.budget_method === 'pct' && r.budget_pct != null ? ' · งบ ' + R.qty(Number(r.budget_pct) * 100) + '% ของยอดขาย' : r.budget_method === 'fixed' ? ' · งบตามค่าใช้จ่ายประจำ' : r.budget_amount != null ? ' · งบ ' + money(r.budget_amount) + '/เดือน' : ''}`
+        + `${(r.budget_amount != null || r.budget_pct != null) && !r.budget_confirmed ? ' · ประมาณการ' : ''}${r.staff_allowed ? ' · พนักงานบันทึกได้' : ''}`, v: '' }) },
     units: { t: 'หน่วย', icon: 'list', fields: [['name', 'ชื่อหน่วย', 'text', { req: true }]], row: (r) => ({ t: esc(r.name), v: '' }) },
   };
 
@@ -56,7 +67,8 @@
     async function draw() {
       const [rows, si, pr, ac, su, cats] = await Promise.all([R.api('master.list', { entity: ent }), R.api('master.list', { entity: 'stock_items' }), R.api('master.list', { entity: 'products' }),
         R.api('master.list', { entity: 'payment_accounts' }), R.api('master.list', { entity: 'suppliers' }), R.api('category.list', {})]);
-      Object.assign(lookups, { stock_items: si, products: pr, accounts: ac, suppliers: su, categories: cats });
+      const ec = await R.api('cost.categories', {}).catch(() => []);
+      Object.assign(lookups, { stock_items: si, products: pr, accounts: ac, suppliers: su, categories: cats, expcats: ec });
       const E = ENT[ent];
       el.innerHTML = `<div class="chips">${Object.entries(ENT).map(([k, v]) => `<button class="chip" data-e="${k}" aria-pressed="${k === ent}">${v.t}</button>`).join('')}</div>
         ${R.list(rows.map((r) => { const x = E.row(r); return R.row({ data: { ed: r.id }, icon: E.icon, off: !r.active, t: x.t, s: x.s, v: x.v || null, pill: r.active ? '' : '<span class="pill">ปิดใช้งาน</span>' }); }), 'ยังไม่มี' + E.t)}
@@ -88,6 +100,11 @@
           <datalist id="units-dl2">${B().units.map((u) => `<option value="${esc(u)}">`).join('')}<option value="ลูก"><option value="ถุง"><option value="ลัง"><option value="แพ็ก"></datalist></div>`;
       }
       if (type === 'stockitem') return `<label class="field">${lab}<select data-k="${k}"><option value="">—</option>${R.opts(lookups.stock_items.filter((a) => a.active), v, (x) => (x.code ? x.code + ' · ' : '') + x.name)}</select></label>`;
+      if (type === 'costcat') return `<label class="field">${lab}<select data-k="${k}"><option value="">—</option>${R.catOptions((lookups.expcats || []).filter((c) => c.active && !c.auto_source && (!r || c.id !== r.id)), v)}</select></label>`;
+      if (type === 'channel') return `<label class="field">${lab}<select data-k="${k}"><option value="">—</option>${R.opts(B().channels.filter((c) => c.kind === 'delivery'), v)}</select></label>`;
+      if (type === 'pctbase') return `<label class="field">${lab}<select data-k="${k}"><option value="sales" ${!v || v === 'sales' ? 'selected' : ''}>ยอดขายรวมทุกช่องทาง</option>
+        ${(lookups.categories || []).map((c) => `<option value="pcat:${esc(c.name)}" ${v === 'pcat:' + c.name ? 'selected' : ''}>สินค้าหมวด ${esc(c.name)}</option>`).join('')}
+        <option value="channel" ${v === 'channel' ? 'selected' : ''}>ยอดขายของแอปที่เลือก</option></select></label>`;
       if (type === 'supplier') return `<label class="field">${lab}<select data-k="${k}"><option value="">—</option>${R.opts(lookups.suppliers.filter((a) => a.active), v)}</select></label>`;
       if (type === 'products' || type === 'channels') {
         const list = type === 'products' ? lookups.products.filter((p) => p.active) : B().channels;
@@ -115,7 +132,7 @@
           const k = i.dataset.k, t = i.dataset.t;
           data[k] = t === 'bool' ? i.checked : t === 'num' ? (i.value === '' ? null : Number(i.value)) : t === 'dt' ? (i.value ? new Date(i.value).toISOString() : null) : (i.value === '' ? null : i.value.trim());
         });
-        m.el.querySelectorAll('[data-segk]').forEach((s) => { data[s.dataset.segk] = R.segVal(s, 'f-' + s.dataset.segk); });
+        m.el.querySelectorAll('[data-segk]').forEach((s) => { const v = R.segVal(s, 'f-' + s.dataset.segk); data[s.dataset.segk] = v === '' ? null : v; });
         if (m.el.querySelector('[data-cuu]')) data.count_units = [...m.el.querySelectorAll('.cu-rows .two')].map((r) => ({ unit: r.querySelector('[data-cuu]').value.trim(), factor: Number(r.querySelector('[data-cuf]').value) }))
           .filter((x) => x.unit && x.factor > 0);
         E.fields.filter((f) => f[2] === 'products' || f[2] === 'channels').forEach((f) => { data[f[0]] = [...m.el.querySelectorAll(`[data-arr="${f[0]}"]:checked`)].map((i) => i.value); });
@@ -242,20 +259,29 @@
     ['ร้านและภาษี', [['shop_name', 'ชื่อร้าน', 'text'], ['vat_registered', 'ร้านจดทะเบียน VAT', 'bool'], ['tax_id', 'เลขประจำตัวผู้เสียภาษี', 'text']]],
     ['เวลาปิดร้านและการเตือน', [['close_time', 'เวลาปิดร้าน', 'time'], ['reminder_times', 'เวลาเตือนพนักงาน (คั่นด้วย ,)', 'times'], ['close_due_time', 'ส่งรายงานภายในเวลานี้ = ตรงเวลา', 'time']]],
     ['เงินสดและเงินหมุน', [['starting_float', 'เงินทอนที่เก็บไว้ในลิ้นชักต้นวัน (บาท)', 'num'], ['cash_variance_tolerance', 'เงินขาด/เกินได้ไม่เกิน (บาท) โดยไม่ต้องอธิบาย', 'num'],
-      ['min_working_capital', 'เงินหมุนขั้นต่ำที่ต้องกันไว้ก่อนถอน/จ่ายกำไร (บาท)', 'num'], ['opening_debt', 'หนี้ตั้งต้น (บาท)', 'num']]],
+      ['min_working_capital', 'เงินหมุนขั้นต่ำที่ต้องกันไว้ก่อนถอน/จ่ายกำไร (บาท)', 'num'], ['opening_debt', 'เงินกู้ลงทุนตั้งต้น (บาท)', 'num']]],
     ['ค่าขนส่งและรอบตลาด', [['transport_default', 'ค่าขนส่งต่อรอบ (บาท)', 'num'], ['transport_method', 'เฉลี่ยค่าขนส่งเข้าต้นทุน', 'alloc'],
       ['market_trip_km', 'ระยะทางไปตลาด (กม.)', 'num'], ['market_trips_per_week', 'รอบตลาดต่อสัปดาห์', 'num']]],
     ['วันหยุดร้านและราคาลดตอนเย็น', [['closed_weekdays', 'วันหยุดประจำสัปดาห์ (ไม่ต้องปิดยอด ไม่เตือน ไม่นับในค่าเฉลี่ยต่อวัน)', 'weekdays'],
       ['closed_dates', 'วันหยุดพิเศษ เช่น ปีใหม่ สงกรานต์', 'dates'], ['markdown_from', 'เวลาเริ่มใช้ราคาลดตอนเย็น (เว้นว่าง = ไม่ใช้ · ตั้งราคาลดที่ ข้อมูลหลัก › สินค้า)', 'time']]],
-    ['เป้าหมาย', [['profit_target', 'เป้ากำไรต่อเดือน (บาท)', 'num']]],
+    ['เป้าหมาย', [['profit_target', 'เป้ากำไรต่อเดือน (บาท) · ใช้เมื่อเดือนนั้นไม่มีในแผนรายเดือน', 'num'],
+      ['monthly_plan', 'แผนรายเดือน: เป้ายอดขาย เป้าต่อวัน (เว้นว่าง = เป้าเดือน ÷ วันเปิดร้าน) และเป้ากำไรสุทธิ', 'plan'], ['kpi_targets', 'เป้า KPI รายวัน (หน้าภาพรวม)', 'kpis']]],
+    ['ต้นทุนและงบ', [['cost_ratio_limits', 'เกณฑ์ต้นทุนรายสัปดาห์ (% ของยอดขาย)', 'ratios'], ['budget_over_alert_pct', 'แจ้งเตือนเมื่อใช้เกินงบถึงวันนี้เกิน (%)', 'pct']]],
+    ['เงินกู้ลงทุน', [['debt_schedule', 'ตารางผ่อนเงินกู้ลงทุนรายงวด (แสดงในหน้าบริหารกระแสเงินสด)', 'debts']]],
     ['หลักฐาน', [['evidence_required', 'บังคับแนบหลักฐานทุกครั้งที่บันทึกค่าใช้จ่าย / รับสินค้า', 'bool'], ['waste_evidence_required', 'บังคับแนบรูปทุกครั้งที่บันทึกของเสีย', 'bool'],
       ['waste_reasons', 'สาเหตุของเสียที่ให้เลือก (คั่นด้วย ,)', 'list']]],
   ];
+  const WIDE = ['plan', 'debts', 'ratios', 'kpis'];
+  const KPIS = [['meatball_sticks', 'ลูกชิ้นหน้าร้าน (ไม้)', 1], ['fruit_storefront', 'ผลไม้หน้าร้าน (บาท)', 1], ['delivery_bills', 'บิล Delivery', 1], ['delivery_avg', 'เฉลี่ย/บิล Delivery (บาท)', 1], ['waste_pct', 'ของเสียไม่เกิน (% ยอดผลไม้)', 100]];
+  const RATIO = [['fruit', 'ผลไม้'], ['meatball', 'ลูกชิ้น'], ['packaging', 'แพ็กเกจจิ้ง']];
+  // editable row lists: monthly plan [month, sales, profit] and debt schedule [due, amount]
+  const ROWS = { plan: [['month', 'เดือน'], ['number', 'เป้ายอดขาย/เดือน'], ['number', 'เป้ายอด/วัน'], ['number', 'เป้ากำไรสุทธิ']], debts: [['date', 'ครบกำหนด'], ['number', 'ยอดชำระ']] };
   R.def('settings', { title: 'ตั้งค่า', back: 'more' }, async function (el) {
     await R.loadBoot();
     const s = B().settings;
     const v = (k) => (s[k] ? s[k].value : null);
     const ck = R.can('report.view') ? await R.api('setup.checklist', {}) : [];
+    const LABEL = Object.fromEntries(SET.flatMap(([, items]) => items.map(([k, l]) => [k, l.split(/ · | \(/)[0]])));
     const LINK = { setting: null, account: '#/master/payment_accounts', channel: '#/master/channels', fixed: '#/expenses', investment: '#/invest', recipe: '#/master/products', stock_cost: '#/stock' };
     const inp = ([k, , t]) => {
       const x = v(k);
@@ -264,15 +290,23 @@
       if (t === 'num') return `<input type="number" step="0.01" min="0" inputmode="decimal" data-s="${k}" data-t="num" value="${x ?? 0}" style="max-width:160px;text-align:right">`;
       if (t === 'alloc') return `<select data-s="${k}" data-t="text" style="max-width:180px">${Object.entries(R.ALLOC).map(([a, l]) => `<option value="${a}" ${a === x ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
       if (t === 'weekdays') return `<span class="chips wd" data-s="${k}" data-t="weekdays">${R.WEEKDAYS.map((d, i) => `<button type="button" class="chip" data-wd="${i}" aria-pressed="${(x || []).includes(i)}">${d}</button>`).join('')}</span>`;
+      if (t === 'kpis') { const r = x || {};
+        return `<div data-s="${k}" data-t="kpis" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:6px">${KPIS.map(([rk, rl, f]) => `<label class="small">${rl}<input type="number" step="any" min="0" data-rk="${rk}" data-f="${f}" value="${r[rk] != null ? Math.round(r[rk] * f * 100) / 100 : ''}" style="width:100%;min-width:0;text-align:right"></label>`).join('')}</div>`; }
+      if (t === 'pct') return `<input type="number" step="1" min="0" max="100" inputmode="decimal" data-s="${k}" data-t="pct" value="${Math.round((x ?? 0.1) * 100)}" style="max-width:100px;text-align:right">`;
+      if (t === 'ratios') { const r = x || {};
+        return `<div data-s="${k}" data-t="ratios" style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:6px">${RATIO.map(([rk, rl]) => `<label class="small">${rl} (%)<input type="number" step="1" min="0" max="100" data-rk="${rk}" value="${r[rk] != null ? Math.round(r[rk] * 100) : ''}" placeholder="ไม่ตั้ง" style="width:100%;min-width:0;text-align:right"></label>`).join('')}</div>`; }
+      if (t === 'plan') return `<div class="rows" data-s="${k}" data-t="plan" data-v="${esc(JSON.stringify(Object.entries(x || {}).sort().map(([m, o]) => [m, o.sales_target ?? '', o.daily_target ?? '', o.net_profit_target ?? ''])))}"></div>`;
+      if (t === 'debts') return `<div class="rows" data-s="${k}" data-t="debts" data-v="${esc(JSON.stringify((x || []).map((d) => [d.due, d.amount])))}"></div>`;
       if (t === 'dates') return `<span class="dates" data-s="${k}" data-t="dates" data-v="${esc(JSON.stringify(x || []))}"></span>`;
       if (t === 'times' || t === 'list') return `<input type="text" data-s="${k}" data-t="${t}" value="${esc((x || []).join(', '))}">`;
       return `<input type="text" data-s="${k}" data-t="text" value="${esc(x || '')}">`;
     };
     el.innerHTML = `${R.sectTabs ? R.sectTabs('settings') : ''}
-      ${ck.length ? `${R.sec('รายการที่ควรตั้งค่าให้ครบ (' + ck.length + ')')}${R.list(ck.slice(0, 40).map((c) => R.row({ href: LINK[c.kind] || '#/settings', icon: 'shield', tone: 'warn', t: esc(c.text), chev: !!LINK[c.kind] })))}
+      ${ck.length ? `${R.sec('รายการที่ควรตั้งค่าให้ครบ (' + ck.length + ')')}${R.list(ck.slice(0, 40).map((c) => R.row({ href: LINK[c.kind] || '#/settings', icon: 'shield', tone: 'warn', t: esc(c.kind === 'setting' && LABEL[c.key] ? 'ตั้งค่า "' + LABEL[c.key] + '" ยังไม่ยืนยัน' : c.text), chev: !!LINK[c.kind] })))}
         <p class="muted small" style="padding:0 4px">ตัวเลขที่ยังไม่ยืนยันจะถูกติดป้ายในรายงาน และไม่ถือเป็นข้อมูลจริง</p>` : '<div class="banner ok"><span class="dot"></span><span>ตั้งค่าครบแล้ว</span></div>'}
-      <form class="form" id="f" onsubmit="return false">${SET.map(([g, items]) => `${R.sec(g)}<div class="card">${items.map((it) => `<div class="money-line"><span><span class="t">${esc(it[1])}</span>
-          <span class="s">${s[it[0]] && s[it[0]].confirmed ? '<span class="pill ok">ยืนยันแล้ว</span>' : '<span class="pill warn">ยังไม่ยืนยัน</span>'}</span></span>${inp(it)}</div>`).join('')}</div>`).join('')}
+      <form class="form" id="f" onsubmit="return false">${SET.map(([g, items]) => `${R.sec(g)}<div class="card">${items.map((it) => { const pill = s[it[0]] && s[it[0]].confirmed ? '<span class="pill ok">ยืนยันแล้ว</span>' : '<span class="pill warn">ยังไม่ยืนยัน</span>';
+          return WIDE.includes(it[2]) ? `<div class="field" style="padding:8px 0"><span><span class="t">${esc(it[1])}</span> ${pill}</span>${inp(it)}</div>`
+            : `<div class="money-line"><span><span class="t">${esc(it[1])}</span><span class="s">${pill}</span></span>${inp(it)}</div>`; }).join('')}</div>`).join('')}
         ${R.sec('ข้อมูลหลักที่เกี่ยวข้อง')}${R.list([R.row({ href: '#/master/payment_accounts', icon: 'wallet', t: 'ยอดยกมาของบัญชีเงิน' }), R.row({ href: '#/master/channels', icon: 'flow', t: 'ช่องทางขายและค่าธรรมเนียม Delivery' }),
           R.row({ href: '#/master/products', icon: 'tag', t: 'สินค้า ราคา สูตร' }), R.row({ href: '#/master/promotions', icon: 'tag', t: 'โปรโมชัน' }), R.row({ href: '#/expenses', icon: 'calendar', t: 'ค่าใช้จ่ายประจำ (ค่าเช่า ฯลฯ)' }), R.row({ href: '#/invest', icon: 'chart', t: 'เงินลงทุน' })])}
       </form>${R.actionbar('<button class="btn primary" id="save">บันทึกและยืนยันทั้งหมด</button>')}`;
@@ -288,11 +322,32 @@
       };
       draw();
     });
+    f.querySelectorAll('.rows').forEach((box) => {
+      const cols = ROWS[box.dataset.t];
+      const read = () => [...box.querySelectorAll('.rw')].map((r) => [...r.querySelectorAll('input')].map((i) => i.value));
+      const draw = (v) => {
+        const grid = `display:grid;grid-template-columns:minmax(0, 1.4fr) repeat(${cols.length - 1}, minmax(0, 1fr)) auto;gap:6px;align-items:center;margin-bottom:6px`;
+        box.innerHTML = `<div style="${grid}" class="muted small">${cols.map(([, l]) => `<span>${l}</span>`).join('')}<span></span></div>
+          ${v.map((row) => `<div class="rw" style="${grid}">${cols.map(([ty, l], j) => `<input type="${ty}" aria-label="${l}" value="${esc(row[j] ?? '')}" style="min-width:0;width:100%${ty === 'number' ? ';text-align:right' : ''}" ${ty === 'number' ? 'min="0" inputmode="decimal"' : ''}>`).join('')}
+          <button type="button" class="btn small rm" aria-label="ลบแถว">✕</button></div>`).join('')}<button type="button" class="btn small add">+ เพิ่มแถว</button>`;
+        box.querySelectorAll('.rm').forEach((b, i) => b.addEventListener('click', () => { const c = read(); c.splice(i, 1); draw(c); }));
+        box.querySelector('.add').addEventListener('click', () => draw([...read(), cols.map(() => '')]));
+      };
+      draw(JSON.parse(box.dataset.v));
+    });
+    const rowsVal = (i) => [...i.querySelectorAll('.rw')].map((r) => [...r.querySelectorAll('input')].map((x) => x.value.trim())).filter((r) => r[0]);
+    const special = {
+      pct: (i) => (Number(i.value) || 0) / 100,
+      kpis: (i) => Object.fromEntries([...i.querySelectorAll('[data-rk]')].filter((x) => x.value !== '').map((x) => [x.dataset.rk, Number(x.value) / Number(x.dataset.f)])),
+      ratios: (i) => Object.fromEntries([...i.querySelectorAll('[data-rk]')].filter((x) => x.value !== '').map((x) => [x.dataset.rk, Number(x.value) / 100])),
+      plan: (i) => Object.fromEntries(rowsVal(i).map(([m, a, d, b]) => [m, { sales_target: Number(a) || 0, ...(d ? { daily_target: Number(d) } : {}), net_profit_target: Number(b) || 0 }])),
+      debts: (i) => rowsVal(i).map(([d, a]) => ({ due: d, amount: Number(a) || 0 })).sort((a, b) => a.due.localeCompare(b.due)),
+    };
     document.getElementById('save').addEventListener('click', (ev) => R.busy(ev.currentTarget, async () => {
       const inputs = [...f.querySelectorAll('[data-s]')];
       for (const i of inputs) {
         const t = i.dataset.t, k = i.dataset.s;
-        const value = t === 'weekdays' ? [...i.querySelectorAll('[data-wd][aria-pressed="true"]')].map((b) => Number(b.dataset.wd))
+        const value = special[t] ? special[t](i) : t === 'weekdays' ? [...i.querySelectorAll('[data-wd][aria-pressed="true"]')].map((b) => Number(b.dataset.wd))
           : t === 'dates' ? JSON.parse(i.dataset.v) : t === 'bool' ? i.checked : t === 'num' ? Number(i.value) || 0 : (t === 'times' || t === 'list') ? i.value.split(',').map((x) => x.trim()).filter(Boolean) : i.value.trim();
         const cur = s[k];
         if (cur && cur.confirmed && JSON.stringify(cur.value) === JSON.stringify(value)) continue;

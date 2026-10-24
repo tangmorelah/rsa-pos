@@ -420,6 +420,9 @@ begin
   select * into v_cat from expense_categories where id = rsa_uuid(p, 'category_id') and active;
   if not found then perform rsa_err('กรุณาเลือกหมวดค่าใช้จ่าย'); end if;
   if not v_is_mgr and not v_cat.staff_allowed then perform rsa_err('หมวด "' || v_cat.name || '" ต้องให้เจ้าของร้านบันทึก'); end if;
+  if v_cat.grp = 'C' and coalesce(v_cat.c_kind, '') <> 'advance' then
+    perform rsa_err('"' || v_cat.name || '" ไม่ใช่ค่าใช้จ่าย จึงไม่นับในกำไร บันทึกที่หน้า เงิน (ชำระหนี้ / เงินเติมจากเจ้าของ / เงินลงทุน / ประกาศใช้กำไร)');
+  end if;
   if p_receipt is null and v_src <> 'credit' and rsa_setting_bool('evidence_required') and not rsa_has_files(p) then
     perform rsa_err('ร้านกำหนดให้แนบหลักฐานทุกครั้ง (ใบเสร็จ / สลิป / รูปบิล)');
   end if;
@@ -511,6 +514,9 @@ begin
   elsif v.status <> 'รอทำจ่าย' then
     perform rsa_err('รายการนี้จ่ายไม่ได้ (สถานะ ' || v.status || ')');
   end if;
+  if v.fixed_expense_id is not null and v.tax_category = 'เงินเดือนและค่าจ้าง' then
+    perform rsa_err('บิลค่าจ้างให้จ่ายที่หน้า พนักงาน / ค่าจ้าง (จ่ายตามวันทำงานจริง แล้วระบบปิดบิลนี้ให้)');
+  end if;
   select * into v_acc from payment_accounts where id = rsa_uuid(p, 'account_id') and active;
   if not found then perform rsa_err('กรุณาเลือกบัญชีที่จ่ายเงิน'); end if;
   if v_acc.kind <> 'cash' and v_ref is null then perform rsa_err('จ่ายผ่านบัญชีต้องใส่เลขอ้างอิง / เลขที่สลิป'); end if;
@@ -550,29 +556,45 @@ begin
   return rsa_expense_json(v.id);
 end $$;
 
--- monthly fixed costs: only confirmed ones become bills
+-- fixed costs: only confirmed ones become bills; monthly on the due day, weekly on every set weekday of the month (never twice)
 create or replace function rsa_fixed_generate(u app_users, p_month date) returns int language plpgsql as $$
-declare f fixed_expenses; v_period text := to_char(p_month, 'YYYY-MM'); v_due date; n int := 0; v_id uuid;
+declare f fixed_expenses; v_m0 date := date_trunc('month', p_month)::date; v_m1 date; v_due date; v_period text; n int := 0;
 begin
-  for f in select * from fixed_expenses where active and confirmed and start_month <= p_month and (end_month is null or end_month >= p_month) loop
-    v_due := least(date_trunc('month', p_month)::date + (f.due_day - 1), (date_trunc('month', p_month) + interval '1 month - 1 day')::date);
-    v_id := gen_random_uuid();
-    insert into expenses(id, expense_no, occurred_at, due_date, category_id, category_name, tax_category, payee, description, amount, status,
-                         pay_account_id, fixed_expense_id, period, fund_source, created_by, approved_at, approved_by)
-    select v_id, rsa_next_no('E'), v_due::timestamptz, v_due, f.category_id, c.name, c.tax_category, f.payee, f.name || ' (' || v_period || ')', f.amount,
-           case when f.auto_approve then 'รอทำจ่าย' else 'รออนุมัติ' end, f.account_id, f.id, v_period, 'credit', u.id,
-           case when f.auto_approve then now() end, case when f.auto_approve then u.id end
-      from (select 1) one left join expense_categories c on c.id = f.category_id
-     where f.amount > 0
-    on conflict (fixed_expense_id, period) do nothing;
-    if found then n := n + 1; end if;
+  v_m1 := (v_m0 + interval '1 month - 1 day')::date;
+  for f in select * from fixed_expenses where active and confirmed and amount > 0 and start_month <= v_m1 and (end_month is null or end_month >= v_m0) loop
+    for v_due in
+      select d::date from generate_series(v_m0, v_m1, interval '1 day') d
+       where (f.frequency = 'weekly' and extract(dow from d) = f.weekday)
+          or (f.frequency = 'monthly' and d::date = least(v_m0 + (f.due_day - 1), v_m1))
+    loop
+      if v_due < f.start_month or (f.end_month is not null and v_due > (date_trunc('month', f.end_month) + interval '1 month - 1 day')::date) then continue; end if;
+      v_period := case when f.frequency = 'weekly' then to_char(v_due, 'YYYY-MM-DD') else to_char(v_m0, 'YYYY-MM') end;
+      -- a wage bill whose week was already paid from the workdays screen is not needed (payroll replaces it the same way)
+      if exists (select 1 from expense_categories c where c.id = f.category_id and c.tax_category = 'เงินเดือนและค่าจ้าง')
+         and exists (select 1 from payroll_runs r where r.status = 'done' and v_due between r.period_from and r.period_to + 6) then continue; end if;
+      insert into expenses(id, expense_no, occurred_at, due_date, category_id, category_name, tax_category, payee, description, amount, status,
+                           pay_account_id, fixed_expense_id, period, fund_source, created_by, approved_at, approved_by)
+      select gen_random_uuid(), rsa_next_no('E'), (v_due::timestamp + time '12:00') at time zone 'Asia/Bangkok', v_due, f.category_id, c.name, c.tax_category, f.payee,
+             f.name || ' (' || case when f.frequency = 'weekly' then 'สัปดาห์ ' || to_char(v_due, 'DD/MM') else v_period end || ')', f.amount,
+             case when f.auto_approve then 'รอทำจ่าย' else 'รออนุมัติ' end, f.account_id, f.id, v_period, 'credit', u.id,
+             case when f.auto_approve then now() end, case when f.auto_approve then u.id end
+        from (select 1) one left join expense_categories c on c.id = f.category_id
+      on conflict (fixed_expense_id, period) do nothing;
+      if found then n := n + 1; end if;
+    end loop;
   end loop;
-  if n > 0 then perform rsa_audit(u, 'fixed.generate', 'fixed_expense', v_period, null, jsonb_build_object('created', n)); end if;
+  if n > 0 then perform rsa_audit(u, 'fixed.generate', 'fixed_expense', to_char(v_m0, 'YYYY-MM'), null, jsonb_build_object('created', n)); end if;
   return n;
 end $$;
 
 -- ---------------------------------------------------------------- stock receiving with transport allocation
 -- pay_method: shop_bank | shop_cash | credit | none ; payer: shop | owner | employee
+create or replace function rsa_receipt_default_category(p jsonb) returns uuid language sql stable as $$
+  select coalesce(nullif(p->>'category_id', '')::uuid, nullif(p->'expense'->>'category_id', '')::uuid,
+    (select id from expense_categories where active and code = 'A00'),
+    (select id from expense_categories where active and tax_category = 'ต้นทุนสินค้า' order by name limit 1))
+$$;
+
 create or replace function rsa__receipt_create(u app_users, p jsonb) returns jsonb language plpgsql as $$
 declare
   v_id uuid := gen_random_uuid(); ln jsonb; v_item stock_items; v_qty numeric; v_lt numeric; v_goods numeric := 0; v_basis numeric; v_bsum numeric := 0;
@@ -637,15 +659,24 @@ begin
                   when 'employee' then 'employee_advance' else 'credit' end;
   end if;
   if v_src is not null and v_goods + v_trans > 0 then
-    v_exp := rsa_expense_insert(u, coalesce(case when jsonb_typeof(p->'expense') = 'object' then p->'expense' end, '{}'::jsonb) || jsonb_build_object(
-      'fund_source', v_src, 'amount', v_goods + v_trans, 'occurred_at', v_at, 'supplier_id', v_sup.id,
-      'payee', coalesce(v_sup.name, p->>'supplier_name'), 'pay_ref', p->>'pay_ref', 'account_id', p->>'account_id', 'employee_id', p->>'employee_id',
-      'category_id', coalesce(nullif(p->>'category_id', ''), p->'expense'->>'category_id',
-                      (select id::text from expense_categories where active and tax_category = 'ต้นทุนสินค้า' order by name limit 1)),
-      'description', coalesce(nullif(p->'expense'->>'description', ''), 'ซื้อของเข้าร้าน ' || coalesce(v_sup.name, p->>'supplier_name', ''))
-                     || case when v_trans > 0 then ' (รวมค่าขนส่ง ' || v_trans || ')' else '' end,
-      'doc_no', p->>'ref_no'), v_id);
-    update stock_receipts set expense_id = v_exp where id = v_id;
+    -- purchases are the shop's real cost: split by the cost category of each stock item; transport goes to the travel category
+    for r in
+      select coalesce(s.cost_category_id, rsa_receipt_default_category(p)) cat_id, sum(l.line_total) amt, string_agg(l.item_name, ', ' order by l.item_name) names
+        from stock_receipt_lines l join stock_items s on s.id = l.stock_item_id where l.receipt_id = v_id
+       group by 1
+      union all
+      select coalesce((select id from expense_categories where active and code = 'A05'), rsa_receipt_default_category(p)), v_trans, 'ค่าขนส่ง / ค่าเดินทางซื้อของ'
+       where v_trans > 0
+    loop
+      continue when r.amt <= 0;
+      v_exp := rsa_expense_insert(u, coalesce(case when jsonb_typeof(p->'expense') = 'object' then p->'expense' end, '{}'::jsonb) || jsonb_build_object(
+        'fund_source', v_src, 'amount', r.amt, 'occurred_at', v_at, 'supplier_id', v_sup.id,
+        'payee', coalesce(v_sup.name, p->>'supplier_name'), 'pay_ref', p->>'pay_ref', 'account_id', p->>'account_id', 'employee_id', p->>'employee_id',
+        'category_id', r.cat_id,
+        'description', 'ซื้อของเข้าร้าน ' || coalesce(v_sup.name, p->>'supplier_name', '') || ': ' || left(r.names, 120),
+        'doc_no', p->>'ref_no'), v_id);
+      update stock_receipts set expense_id = coalesce(expense_id, v_exp) where id = v_id;
+    end loop;
   end if;
   perform rsa_audit(u, 'receipt.create', 'receipt', v_id::text, null,
     jsonb_build_object('goods', v_goods, 'transport', v_trans, 'method', v_method, 'lines', jsonb_array_length(p->'lines'), 'expense_id', v_exp, 'fund_source', v_src));
