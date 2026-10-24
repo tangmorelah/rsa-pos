@@ -292,6 +292,8 @@ begin
     when 'expense.update'     then rsa__expense_update(u, p)
     when 'report.costs'       then rsa__report_costs(u, p)
     when 'cost.categories'    then rsa__cost_categories(u, p)
+    when 'dashboard.home'     then rsa__dashboard_home(u, p)
+    when 'cashflow.months'    then rsa__cashflow_months(u, p)
     else (select jsonb_build_object('error', 'ไม่รู้จักคำสั่ง ' || p_action))
   end;
 end $$;

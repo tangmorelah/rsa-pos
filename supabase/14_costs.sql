@@ -26,7 +26,7 @@ select v.name, v.tax, v.staff, v.code, v.grp, v.c_kind, v.ratio_key, v.method, v
     ('น้ำมันทอด', 'ค่าใช้จ่ายในการขาย', true, 'B06', 'B', null, null, 'amount', 36),
     ('น้ำแข็ง', 'ค่าใช้จ่ายในการขาย', true, 'B07', 'B', null, null, 'amount', 37),
     ('อินเทอร์เน็ต/โทรศัพท์', 'ค่าสาธารณูปโภค', false, 'B09', 'B', null, null, 'amount', 39),
-    ('ชำระหนี้', null, false, 'C01', 'C', 'loan_repayment', null, 'amount', 91),
+    ('ผ่อนเงินกู้ลงทุน', null, false, 'C01', 'C', 'loan_repayment', null, 'amount', 91),
     ('เงินเติมจากเจ้าของ', null, false, 'C02', 'C', 'capital_in', null, 'amount', 92),
     ('เงินลงทุน (ค่าเซ้ง/อุปกรณ์)', null, false, 'C03', 'C', 'investment_item', null, 'amount', 93),
     ('ถอนกำไร', null, false, 'C04', 'C', 'owner_draw', null, 'amount', 94)

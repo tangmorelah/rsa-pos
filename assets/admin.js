@@ -52,7 +52,7 @@
       ['budget_amount', 'งบ / เดือน (บาท)', 'number'], ['budget_pct', 'งบเป็นสัดส่วนของยอดขาย (0.46 = 46%)', 'number'],
       ['pct_base', 'คิด % จากยอดขายของ', 'pctbase'], ['channel_id', 'แอป Delivery (GP / โฆษณา)', 'channel'],
       ['ratio_key', 'ใช้ดูสัดส่วนต้นทุนรายสัปดาห์', 'seg', { o: [['', 'ไม่ใช้'], ['fruit', 'ผลไม้'], ['meatball', 'ลูกชิ้น'], ['packaging', 'แพ็กเกจจิ้ง']] }],
-      ['c_kind', 'กลุ่ม C บันทึกเป็น', 'seg', { o: [['', '-'], ['loan_repayment', 'ชำระหนี้'], ['capital_in', 'ทุนเจ้าของ'], ['investment_item', 'เงินลงทุน'], ['owner_draw', 'ถอนกำไร'], ['advance', 'เบิกค่าแรง']] }],
+      ['c_kind', 'กลุ่ม C บันทึกเป็น', 'seg', { o: [['', '-'], ['loan_repayment', 'ผ่อนเงินกู้ลงทุน'], ['capital_in', 'ทุนเจ้าของ'], ['investment_item', 'เงินลงทุน'], ['owner_draw', 'ถอนกำไร'], ['advance', 'เบิกค่าแรง']] }],
       ['budget_confirmed', 'ยืนยันงบแล้ว (ไม่ติดป้ายประมาณการ)', 'bool'],
       ['tax_category', 'หมวดทางภาษี / บัญชี', 'text'], ['staff_allowed', 'พนักงานบันทึกได้', 'bool'], ['sort_order', 'ลำดับแสดง', 'number']],
       row: (r) => ({ t: `${r.code ? esc(r.code) + ' · ' : ''}${esc(r.name)}`, s: `${esc(R.GRP[r.grp || 'B'])}${r.auto_source ? ' · ดึงจากเงินเข้า Delivery อัตโนมัติ' : ''}`
@@ -259,22 +259,23 @@
     ['ร้านและภาษี', [['shop_name', 'ชื่อร้าน', 'text'], ['vat_registered', 'ร้านจดทะเบียน VAT', 'bool'], ['tax_id', 'เลขประจำตัวผู้เสียภาษี', 'text']]],
     ['เวลาปิดร้านและการเตือน', [['close_time', 'เวลาปิดร้าน', 'time'], ['reminder_times', 'เวลาเตือนพนักงาน (คั่นด้วย ,)', 'times'], ['close_due_time', 'ส่งรายงานภายในเวลานี้ = ตรงเวลา', 'time']]],
     ['เงินสดและเงินหมุน', [['starting_float', 'เงินทอนที่เก็บไว้ในลิ้นชักต้นวัน (บาท)', 'num'], ['cash_variance_tolerance', 'เงินขาด/เกินได้ไม่เกิน (บาท) โดยไม่ต้องอธิบาย', 'num'],
-      ['min_working_capital', 'เงินหมุนขั้นต่ำที่ต้องกันไว้ก่อนถอน/จ่ายกำไร (บาท)', 'num'], ['opening_debt', 'หนี้ตั้งต้น (บาท)', 'num']]],
+      ['min_working_capital', 'เงินหมุนขั้นต่ำที่ต้องกันไว้ก่อนถอน/จ่ายกำไร (บาท)', 'num'], ['opening_debt', 'เงินกู้ลงทุนตั้งต้น (บาท)', 'num']]],
     ['ค่าขนส่งและรอบตลาด', [['transport_default', 'ค่าขนส่งต่อรอบ (บาท)', 'num'], ['transport_method', 'เฉลี่ยค่าขนส่งเข้าต้นทุน', 'alloc'],
       ['market_trip_km', 'ระยะทางไปตลาด (กม.)', 'num'], ['market_trips_per_week', 'รอบตลาดต่อสัปดาห์', 'num']]],
     ['วันหยุดร้านและราคาลดตอนเย็น', [['closed_weekdays', 'วันหยุดประจำสัปดาห์ (ไม่ต้องปิดยอด ไม่เตือน ไม่นับในค่าเฉลี่ยต่อวัน)', 'weekdays'],
       ['closed_dates', 'วันหยุดพิเศษ เช่น ปีใหม่ สงกรานต์', 'dates'], ['markdown_from', 'เวลาเริ่มใช้ราคาลดตอนเย็น (เว้นว่าง = ไม่ใช้ · ตั้งราคาลดที่ ข้อมูลหลัก › สินค้า)', 'time']]],
     ['เป้าหมาย', [['profit_target', 'เป้ากำไรต่อเดือน (บาท) · ใช้เมื่อเดือนนั้นไม่มีในแผนรายเดือน', 'num'],
-      ['monthly_plan', 'แผนรายเดือน: เป้ายอดขาย และเป้ากำไรสุทธิ', 'plan']]],
+      ['monthly_plan', 'แผนรายเดือน: เป้ายอดขาย เป้าต่อวัน (เว้นว่าง = เป้าเดือน ÷ วันเปิดร้าน) และเป้ากำไรสุทธิ', 'plan'], ['kpi_targets', 'เป้า KPI รายวัน (หน้าภาพรวม)', 'kpis']]],
     ['ต้นทุนและงบ', [['cost_ratio_limits', 'เกณฑ์ต้นทุนรายสัปดาห์ (% ของยอดขาย)', 'ratios'], ['budget_over_alert_pct', 'แจ้งเตือนเมื่อใช้เกินงบถึงวันนี้เกิน (%)', 'pct']]],
-    ['หนี้', [['debt_schedule', 'ตารางชำระหนี้รายงวด (แสดงในแผนเงินสด)', 'debts']]],
+    ['เงินกู้ลงทุน', [['debt_schedule', 'ตารางผ่อนเงินกู้ลงทุนรายงวด (แสดงในหน้าบริหารกระแสเงินสด)', 'debts']]],
     ['หลักฐาน', [['evidence_required', 'บังคับแนบหลักฐานทุกครั้งที่บันทึกค่าใช้จ่าย / รับสินค้า', 'bool'], ['waste_evidence_required', 'บังคับแนบรูปทุกครั้งที่บันทึกของเสีย', 'bool'],
       ['waste_reasons', 'สาเหตุของเสียที่ให้เลือก (คั่นด้วย ,)', 'list']]],
   ];
-  const WIDE = ['plan', 'debts', 'ratios'];
+  const WIDE = ['plan', 'debts', 'ratios', 'kpis'];
+  const KPIS = [['meatball_sticks', 'ลูกชิ้นหน้าร้าน (ไม้)', 1], ['fruit_storefront', 'ผลไม้หน้าร้าน (บาท)', 1], ['delivery_bills', 'บิล Delivery', 1], ['delivery_avg', 'เฉลี่ย/บิล Delivery (บาท)', 1], ['waste_pct', 'ของเสียไม่เกิน (% ยอดผลไม้)', 100]];
   const RATIO = [['fruit', 'ผลไม้'], ['meatball', 'ลูกชิ้น'], ['packaging', 'แพ็กเกจจิ้ง']];
   // editable row lists: monthly plan [month, sales, profit] and debt schedule [due, amount]
-  const ROWS = { plan: [['month', 'เดือน'], ['number', 'เป้ายอดขาย'], ['number', 'เป้ากำไรสุทธิ']], debts: [['date', 'ครบกำหนด'], ['number', 'ยอดชำระ']] };
+  const ROWS = { plan: [['month', 'เดือน'], ['number', 'เป้ายอดขาย/เดือน'], ['number', 'เป้ายอด/วัน'], ['number', 'เป้ากำไรสุทธิ']], debts: [['date', 'ครบกำหนด'], ['number', 'ยอดชำระ']] };
   R.def('settings', { title: 'ตั้งค่า', back: 'more' }, async function (el) {
     await R.loadBoot();
     const s = B().settings;
@@ -289,10 +290,12 @@
       if (t === 'num') return `<input type="number" step="0.01" min="0" inputmode="decimal" data-s="${k}" data-t="num" value="${x ?? 0}" style="max-width:160px;text-align:right">`;
       if (t === 'alloc') return `<select data-s="${k}" data-t="text" style="max-width:180px">${Object.entries(R.ALLOC).map(([a, l]) => `<option value="${a}" ${a === x ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
       if (t === 'weekdays') return `<span class="chips wd" data-s="${k}" data-t="weekdays">${R.WEEKDAYS.map((d, i) => `<button type="button" class="chip" data-wd="${i}" aria-pressed="${(x || []).includes(i)}">${d}</button>`).join('')}</span>`;
+      if (t === 'kpis') { const r = x || {};
+        return `<div data-s="${k}" data-t="kpis" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:6px">${KPIS.map(([rk, rl, f]) => `<label class="small">${rl}<input type="number" step="any" min="0" data-rk="${rk}" data-f="${f}" value="${r[rk] != null ? Math.round(r[rk] * f * 100) / 100 : ''}" style="width:100%;min-width:0;text-align:right"></label>`).join('')}</div>`; }
       if (t === 'pct') return `<input type="number" step="1" min="0" max="100" inputmode="decimal" data-s="${k}" data-t="pct" value="${Math.round((x ?? 0.1) * 100)}" style="max-width:100px;text-align:right">`;
       if (t === 'ratios') { const r = x || {};
         return `<div data-s="${k}" data-t="ratios" style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:6px">${RATIO.map(([rk, rl]) => `<label class="small">${rl} (%)<input type="number" step="1" min="0" max="100" data-rk="${rk}" value="${r[rk] != null ? Math.round(r[rk] * 100) : ''}" placeholder="ไม่ตั้ง" style="width:100%;min-width:0;text-align:right"></label>`).join('')}</div>`; }
-      if (t === 'plan') return `<div class="rows" data-s="${k}" data-t="plan" data-v="${esc(JSON.stringify(Object.entries(x || {}).sort().map(([m, o]) => [m, o.sales_target ?? '', o.net_profit_target ?? ''])))}"></div>`;
+      if (t === 'plan') return `<div class="rows" data-s="${k}" data-t="plan" data-v="${esc(JSON.stringify(Object.entries(x || {}).sort().map(([m, o]) => [m, o.sales_target ?? '', o.daily_target ?? '', o.net_profit_target ?? ''])))}"></div>`;
       if (t === 'debts') return `<div class="rows" data-s="${k}" data-t="debts" data-v="${esc(JSON.stringify((x || []).map((d) => [d.due, d.amount])))}"></div>`;
       if (t === 'dates') return `<span class="dates" data-s="${k}" data-t="dates" data-v="${esc(JSON.stringify(x || []))}"></span>`;
       if (t === 'times' || t === 'list') return `<input type="text" data-s="${k}" data-t="${t}" value="${esc((x || []).join(', '))}">`;
@@ -335,8 +338,9 @@
     const rowsVal = (i) => [...i.querySelectorAll('.rw')].map((r) => [...r.querySelectorAll('input')].map((x) => x.value.trim())).filter((r) => r[0]);
     const special = {
       pct: (i) => (Number(i.value) || 0) / 100,
+      kpis: (i) => Object.fromEntries([...i.querySelectorAll('[data-rk]')].filter((x) => x.value !== '').map((x) => [x.dataset.rk, Number(x.value) / Number(x.dataset.f)])),
       ratios: (i) => Object.fromEntries([...i.querySelectorAll('[data-rk]')].filter((x) => x.value !== '').map((x) => [x.dataset.rk, Number(x.value) / 100])),
-      plan: (i) => Object.fromEntries(rowsVal(i).map(([m, a, b]) => [m, { sales_target: Number(a) || 0, net_profit_target: Number(b) || 0 }])),
+      plan: (i) => Object.fromEntries(rowsVal(i).map(([m, a, d, b]) => [m, { sales_target: Number(a) || 0, ...(d ? { daily_target: Number(d) } : {}), net_profit_target: Number(b) || 0 }])),
       debts: (i) => rowsVal(i).map(([d, a]) => ({ due: d, amount: Number(a) || 0 })).sort((a, b) => a.due.localeCompare(b.due)),
     };
     document.getElementById('save').addEventListener('click', (ev) => R.busy(ev.currentTarget, async () => {

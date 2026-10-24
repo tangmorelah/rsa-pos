@@ -542,7 +542,7 @@ create or replace function rsa_setting_keys() returns text[] language sql immuta
   select array['shop_name','close_due_time','cash_variance_tolerance','waste_evidence_required','vat_registered','tax_id',
     'close_time','reminder_times','starting_float','min_working_capital','opening_debt','transport_default','transport_method',
     'market_trip_km','market_trips_per_week','profit_target','evidence_required','waste_reasons','payroll_week_start','product_categories',
-    'markdown_from','closed_weekdays','closed_dates','cost_ratio_limits','budget_over_alert_pct','monthly_plan','debt_schedule','lease_end']
+    'markdown_from','closed_weekdays','closed_dates','cost_ratio_limits','budget_over_alert_pct','monthly_plan','debt_schedule','lease_end','kpi_targets']
 $$;
 
 create or replace function rsa__settings_save(u app_users, p jsonb) returns jsonb language plpgsql as $$
@@ -579,6 +579,10 @@ begin
   if v_key = 'cost_ratio_limits' and (jsonb_typeof(v_val) <> 'object'
      or exists (select 1 from jsonb_each(v_val) t where jsonb_typeof(t.value) <> 'number' or (t.value #>> '{}')::numeric not between 0 and 1)) then
     perform rsa_err('เกณฑ์ต้นทุนต้องเป็นสัดส่วน 0–1 เช่น ผลไม้ 0.65');
+  end if;
+  if v_key = 'kpi_targets' and (jsonb_typeof(v_val) <> 'object'
+     or exists (select 1 from jsonb_each(v_val) t where jsonb_typeof(t.value) <> 'number' or (t.value #>> '{}')::numeric < 0)) then
+    perform rsa_err('เป้า KPI ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป');
   end if;
   if v_key = 'budget_over_alert_pct' and (jsonb_typeof(v_val) <> 'number' or (v_val #>> '{}')::numeric not between 0 and 1) then
     perform rsa_err('เกณฑ์แจ้งเตือนเกินงบต้องเป็นสัดส่วน 0–1 เช่น 0.1');

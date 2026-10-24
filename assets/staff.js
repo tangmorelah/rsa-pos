@@ -534,7 +534,7 @@
       else if (R.isNotCost(c)) {
         // group C is not a cost: it is saved where it belongs (debt, capital, investment, drawing), never in profit
         const accs = B().accounts.filter((a) => a.active !== false);
-        box.innerHTML = `<div class="note info"><b>${esc(c.name)} ไม่ใช่ค่าใช้จ่าย</b> ไม่นับในกำไร ${c.c_kind === 'loan_repayment' ? 'ระบบลดยอดหนี้คงเหลือ และตัดเงินจากบัญชีที่เลือก'
+        box.innerHTML = `<div class="note info"><b>${esc(c.name)} ไม่ใช่ค่าใช้จ่าย</b> ไม่นับในกำไร ${c.c_kind === 'loan_repayment' ? 'ระบบลดยอดเงินกู้ลงทุนคงเหลือ และตัดเงินจากบัญชีที่เลือก'
           : c.c_kind === 'capital_in' ? 'ระบบบันทึกเป็นทุนของเจ้าของ เงินเข้าบัญชีที่เลือก' : c.c_kind === 'investment_item' ? 'ระบบบันทึกเป็นเงินลงทุน (ค่าเซ้ง / อุปกรณ์) ใช้คิดระยะคืนทุน'
           : 'ถอนกำไรต้องประกาศใช้กำไรก่อน ที่หน้า เงิน'}</div>
           ${['loan_repayment', 'capital_in'].includes(c.c_kind) ? `<div class="field"><span>${c.c_kind === 'loan_repayment' ? 'จ่ายจากบัญชี' : 'เงินเข้าบัญชี'}</span>${R.seg('cacc', accs.map((a) => [a.id, a.name]), (accs.find((a) => !a.is_drawer) || accs[0] || {}).id, 'wrap')}</div>` : ''}`;
@@ -564,7 +564,7 @@
         if (cc.c_kind === 'owner_draw') { R.toast('ถอนกำไร: ประกาศใช้กำไรก่อน แล้วระบบจ่ายเงินออกให้'); location.hash = '#/cashflow'; return; }
         if (!(Number(R.val(f, '#amt')) > 0)) throw new Error('จำนวนเงินต้องมากกว่า 0');
         const c = await R.api('capital.create', { kind: cc.c_kind, amount: R.val(f, '#amt'), occurred_at: R.toIso(R.val(f, '#at')), account_id: R.segVal(f, 'cacc'),
-          party: R.val(f, '#payee') || (cc.c_kind === 'loan_repayment' ? 'เจ้าหนี้' : 'เจ้าของ'), category: R.val(f, '#desc') || cc.name, note: R.val(f, '#desc') || null });
+          party: R.val(f, '#payee') || (cc.c_kind === 'loan_repayment' ? 'ผู้ให้กู้' : 'เจ้าของ'), category: R.val(f, '#desc') || cc.name, note: R.val(f, '#desc') || null });
         success(el, { title: 'บันทึก' + cc.name + 'แล้ว', sub: `${baht(c.amount || R.val(f, '#amt'))} · ไม่นับเป็นค่าใช้จ่ายในกำไร`,
           actions: [{ label: 'ดูหน้าเงิน', href: '#/cashflow' }, { label: 'บันทึกอีกรายการ', href: '#/expense', primary: true }] });
         return;

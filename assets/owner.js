@@ -18,7 +18,7 @@
   // ------------------------------------------------------------ overview
   const EX_ROUTE = { open_no_sales: 'settings', close_missing: 'closes', close_today: 'close', cash_variance: 'approvals', close_adjust: 'approvals', cancel_after_close: 'orders', expense_review: 'approvals',
     expense_pending: 'approvals', expense_due: 'approvals', stocktake_pending: 'approvals', settlement_diff: 'cashflow', settlement_overdue: 'cashflow', bank_unreconciled: 'cashflow',
-    low_stock: 'stock', unconfirmed: 'settings', budget_over: 'dashboard', cost_ratio_high: 'dashboard', missing_docs: 'expenses', fixed_overdue: 'approvals',
+    low_stock: 'stock', unconfirmed: 'settings', budget_over: 'cashflow', cost_ratio_high: 'cashflow', debt_short: 'cashflow', missing_docs: 'expenses', fixed_overdue: 'approvals',
     five_paydays: 'staff' };
   R.EX_ROUTE = EX_ROUTE;
   R.profitNote = profitNote;
@@ -161,25 +161,75 @@
   });
 
   // ------------------------------------------------------------ money (cashflow management)
+  // ------------------------------------------------------------ money plan: each month's payments against the money expected
+  const MP_ST = { ok: ['ok', 'พอจ่าย'], five: ['warn', 'ค่าจ้าง 5 รอบ'] };
+  const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const monthName = (ym) => TH_M[Number(ym.slice(5, 7)) - 1] + ' ' + (Number(ym.slice(0, 4)) + 543);
+  function monthCard(m) {
+    const [tone, label] = m.status === 'short' ? ['bad', 'ขาด ' + money(m.short)] : MP_ST[m.status] || MP_ST.ok;
+    return `<div class="mp-month ${m.status === 'short' ? 'alert' : ''}">
+      <div class="mp-line"><b>${monthName(m.month)}${m.partial ? ' <span class="muted small">(ที่เหลือของเดือน)</span>' : ''}</b><span class="pill ${tone}">${label}</span></div>
+      ${m.lines.length ? m.lines.map((l) => `<div class="mp-line small"><span class="muted">${esc(l.label)}</span><span class="num">${money(l.amount)}</span></div>`).join('') : '<div class="muted small">ยังไม่มีรายการต้องจ่าย</div>'}
+      <div class="mp-line tot small"><span>ต้องจ่ายรวม</span><span class="num">${baht(m.total)}</span></div>
+      <div class="mp-line small"><span class="muted">เงินคาดว่าเหลือสิ้นเดือน</span><span class="num" style="color:${m.end_cash < 0 ? 'var(--bad)' : 'inherit'}">${baht(m.end_cash)}</span></div>
+      ${m.advice ? `<div class="small"><b>ควรทำ:</b> ${esc(m.advice)}</div>` : ''}</div>`;
+  }
+  function moneyChart(mp) {
+    const pts = mp.daily, W = 640, H = 200, L = 56, Rt = 14, T = 14, Bt = 28;
+    const vals = pts.map((p) => p.balance).concat([mp.min_cash || 0, 0]);
+    const hi = Math.max(...vals), lo = Math.min(...vals), span = hi - lo || 1;
+    const x = (i) => L + (i * (W - L - Rt)) / (pts.length - 1), y = (v) => T + (H - T - Bt) * (1 - (v - lo) / span);
+    const line = pts.map((p, i) => `${x(i).toFixed(1)},${y(p.balance).toFixed(1)}`).join(' ');
+    const first = pts.findIndex((p) => mp.min_cash && p.balance < mp.min_cash);
+    const marks = pts.map((p, i) => (p.loan ? `<circle cx="${x(i)}" cy="${y(p.balance)}" r="5" fill="var(--bad)"><title>ผ่อนเงินกู้ลงทุน ${money(p.loan)}</title></circle>
+      <text x="${Math.min(x(i) + 6, W - 150)}" y="${Math.min(y(p.balance) + 16, H - Bt - 4)}" class="bad">ผ่อนเงินกู้ลงทุน −${money(p.loan)}</text>` : '')).join('');
+    const ticks = [0, 15, 30, 45, 60].map((i) => `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${R.date(pts[i].date).replace(/\s\d{4}$/, '')}</text>`).join('');
+    const ylab = [hi, lo].map((v) => `<text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${Math.round(v).toLocaleString('th-TH')}</text>`).join('');
+    return `<div class="mp-title"><b>เงินสดคาดการณ์ 60 วัน</b>${first >= 0 ? `<span class="pill bad">ต่ำกว่าขั้นต่ำ ${esc(R.date(pts[first].date))}</span>` : '<span class="pill ok">ไม่ต่ำกว่าขั้นต่ำ</span>'}</div>
+      <figure class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="เงินสดคาดการณ์ 60 วัน">
+        ${ylab}${ticks}<line x1="${L}" x2="${W - Rt}" y1="${y(0)}" y2="${y(0)}" class="g"/>
+        ${mp.min_cash ? `<line x1="${L}" x2="${W - Rt}" y1="${y(mp.min_cash)}" y2="${y(mp.min_cash)}" stroke="var(--bad)" stroke-dasharray="5 4"/><text x="${W - Rt}" y="${y(mp.min_cash) - 5}" text-anchor="end" class="bad">ขั้นต่ำ ${money(mp.min_cash)}</text>` : ''}
+        <polygon points="${x(0)},${y(lo)} ${line} ${x(pts.length - 1)},${y(lo)}" fill="var(--accent)" opacity=".1"/>
+        <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>${marks}</svg></figure>`;
+  }
+  // this month's costs: main categories only; the full table opens on request
+  async function costSummary(el) {
+    const box = el.querySelector('#costsum'); if (!box) return;
+    const c = await R.api('report.costs', {}), over = Number(c.over_alert_pct) || 0.1;
+    const rows = c.rows.filter((r) => ['A', 'B'].includes(r.grp) && !r.parent_id && (Number(r.used) || Number(r.budget_to_date)));
+    rows.sort((a, b) => (b.budget_to_date ? b.used / b.budget_to_date : 0) - (a.budget_to_date ? a.used / a.budget_to_date : 0));
+    box.innerHTML = `${rows.slice(0, 6).map((r) => { const bt = Number(r.budget_to_date) || 0, u = Number(r.used), bad = bt && u > bt * (1 + over), warn = bt && u > bt;
+      const w = bt ? Math.min(100, (u / Math.max(u, bt)) * 100) : 100, mk = bt ? Math.min(100, (bt / Math.max(u, bt)) * 100) : null;
+      return `<div class="mp-cost"><span>${esc(r.name)}${bad ? ` <span class="pill bad">เกิน ${money(u - bt)}</span>` : ''}${r.estimate ? ' <span class="muted small">ประมาณการ</span>' : ''}</span>
+        <b class="num">${money(u)}${bt ? ' / ' + money(bt) : ''}</b><span class="bar"><i class="${bad ? 'bad' : warn ? 'warn' : 'ok'}" style="width:${w}%"></i>${mk != null ? `<b style="left:${mk}%"></b>` : ''}</span></div>`; }).join('')}
+      <p class="muted small">ใช้จริง / งบที่ควรใช้ถึงวันนี้ (เส้นดำ) · กำไรสุทธิเดือนนี้ ${baht(c.summary.net_profit)}</p>
+      <button type="button" class="btn small" id="costmore">ดูทุกหมวดและสัดส่วนรายสัปดาห์</button>`;
+    on(box.querySelector('#costmore'), () => { const f = el.querySelector('#costfull'); f.hidden = !f.hidden; if (!f.hidden && !f.dataset.done) { f.dataset.done = '1'; R.costCard(f).catch(R.fail); } });
+  }
+
   R.def('cashflow', { title: 'การบริหารกระแสเงินสด', tab: 'cashflow', back: 'more' }, async function (el) {
-    const [x, fc] = await Promise.all([R.api('cashflow.summary', {}), R.api('cashflow.forecast', {})]);
+    const [x, fc, mp] = await Promise.all([R.api('cashflow.summary', {}), R.api('cashflow.forecast', {}), R.api('cashflow.months', {})]);
     const manage = R.can('cashflow.manage');
     const total = x.accounts.reduce((a, b) => a + Number(b.balance), 0);
     const c = x.capital, pf = x.profit;
-    const KIND = { capital_in: 'ลงทุนเพิ่ม', loan_in: 'กู้ยืม', capital_return: 'ถอนเงินเจ้าของ / คืนทุน', loan_repayment: 'ชำระหนี้', owner_paid: 'เจ้าของจ่ายแทนร้าน' };
-    const KIND_NEW = { capital_in: 'ลงทุนเพิ่ม', loan_in: 'กู้ยืม', capital_return: 'ถอนเงินเจ้าของ / คืนทุน', loan_repayment: 'ชำระหนี้' };
+    const KIND = { capital_in: 'ลงทุนเพิ่ม', loan_in: 'กู้ยืม', capital_return: 'ถอนเงินเจ้าของ / คืนทุน', loan_repayment: 'ผ่อนเงินกู้ลงทุน', owner_paid: 'เจ้าของจ่ายแทนร้าน' };
+    const KIND_NEW = { capital_in: 'ลงทุนเพิ่ม', loan_in: 'กู้ยืม', capital_return: 'ถอนเงินเจ้าของ / คืนทุน', loan_repayment: 'ผ่อนเงินกู้ลงทุน' };
     const PUR = R.PURPOSE;
     el.innerHTML = `${R.sectTabs('cashflow')}<div class="card blue"><span class="muted small">เงินที่ใช้ได้ตอนนี้ (ทุกบัญชี)</span><span class="big-amt">${baht(total)}</span></div>
       ${R.list(x.accounts.map((a) => R.row({ data: { acc: a.id }, icon: a.is_drawer ? 'wallet' : 'receipt', t: esc(a.name),
         s: a.is_drawer ? 'เงินสดหน้าร้าน · นับตอนปิดยอด' : Number(a.unreconciled) ? `ยังไม่ตรวจกับ statement ${a.unreconciled} รายการ` : 'ตรวจกับ statement ครบ', v: baht(a.balance),
         pill: a.opening_confirmed ? '' : '<span class="pill warn">ยอดยกมายังไม่ยืนยัน</span>' })))}
+      ${R.sec('เตรียมเงินรายเดือน')}
+      <div class="mp-chart card">${moneyChart(mp)}</div>
+      <div class="mp-months">${mp.months.map(monthCard).join('')}</div>
+      <p class="muted small" style="padding:0 4px">เงินคาดการณ์ = เงินตอนนี้ + ยอดขายและเงิน Delivery ที่คาดว่าจะเข้า − ค่าใช้จ่ายทั่วไปเฉลี่ย − รายการที่ต้องจ่าย ใช้ดูทิศทางเท่านั้น</p>
+      ${R.can('report.view') ? `${R.sec('ต้นทุนและงบเดือนนี้')}<div class="card" id="costsum"><div class="boot">กำลังโหลด…</div></div><div id="costfull" hidden></div>` : ''}
       ${manage ? R.list([R.row({ data: { act: 'tr' }, icon: 'flow', t: 'โอนเงินระหว่างบัญชี', s: 'เช่น นำเงินสดหน้าร้านฝากธนาคาร' })]) : ''}
       ${R.sec('คาดการณ์เงินสด 7 / 14 / 30 วัน')}
-      <div class="card">${R.lineChart(fc.daily.map((p) => ({ ...p, label: R.date(p.date) })), [{ key: 'balance', label: 'เงินคาดว่าคงเหลือ' }], { title: 'คาดการณ์เงินสด 30 วัน', xfmt: (p) => String(new Date(p.date + 'T12:00:00').getDate()) })}
-        ${Number(fc.min_working_capital) ? `<p class="muted small">เงินหมุนขั้นต่ำที่ต้องกันไว้ ${baht(fc.min_working_capital)}</p>` : ''}</div>
+      ${Number(fc.min_working_capital) ? `<p class="muted small" style="padding:0 4px">เงินหมุนขั้นต่ำที่ต้องกันไว้ ${baht(fc.min_working_capital)}</p>` : ''}
       ${R.table([{ l: 'ช่วง', f: (h) => h.days + ' วันข้างหน้า' }, { l: 'Delivery เข้า', num: true, f: (h) => '+' + money(h.delivery_in) },
         { l: 'ยอดขายหน้าร้าน (ประมาณ)', num: true, f: (h) => '+' + money(h.est_sales) }, { l: 'ค้างจ่าย', num: true, f: (h) => '−' + money(h.payables) },
-        { l: 'ค่าใช้จ่ายประจำ', num: true, f: (h) => '−' + money(h.fixed) }, { l: 'งวดหนี้', num: true, f: (h) => (Number(h.debt) ? '−' + money(h.debt) : '-') },
+        { l: 'ค่าใช้จ่ายประจำ', num: true, f: (h) => '−' + money(h.fixed) }, { l: 'ผ่อนเงินกู้ลงทุน', num: true, f: (h) => (Number(h.debt) ? '−' + money(h.debt) : '-') },
         { l: 'ใช้จ่ายทั่วไป (ประมาณ)', num: true, f: (h) => '−' + money(h.est_spend) },
         { l: 'คาดว่าคงเหลือ', num: true, main: true, f: (h) => { const e = Number(fc.cash_now) + Number(h.delivery_in) + Number(h.est_sales) - Number(h.payables) - Number(h.fixed) - Number(h.debt || 0) - Number(h.est_spend);
           return `<b style="color:${e < Number(fc.min_working_capital || 0) ? 'var(--bad)' : 'inherit'}">${baht(e)}</b>`; } }], fc.horizons)}
@@ -190,16 +240,17 @@
       ${R.list(x.receivables.map((r) => R.row({ data: { set: r.channel_id, from: r.oldest }, icon: 'flow', t: esc(r.channel_name), s: `${r.orders} ออเดอร์ · ครบรอบ ${R.date(r.expected_by)}`, v: baht(r.est_net), vs: manage ? 'แตะเมื่อเงินเข้า' : 'หลังหักค่าธรรมเนียม' })), 'ไม่มียอดค้างรับ')}
       ${R.sec('ค้างจ่าย', x.payables.length ? '<a href="#/approvals">จัดการ</a>' : '')}
       ${R.list(x.payables.slice(0, 6).map((p) => R.row({ href: '#/approvals', icon: 'wallet', t: esc(p.description), s: `ครบ ${R.date(p.due_date)} · ${esc(p.status)}`, v: baht(p.amount) })), 'ไม่มีค่าใช้จ่ายค้างจ่าย')}
-      ${R.sec('ทุน หนี้ และกำไร')}
-      <div class="stats">${R.stat('ทุนที่ใส่', baht(c.capital_in), 'คืนแล้ว ' + money(c.capital_returned))}${R.stat('หนี้คงค้าง', baht(c.debt_left ?? (Number(c.loan_in) - Number(c.loan_repaid))), 'ตั้งต้น ' + money(c.opening_debt || 0) + ' + กู้เพิ่ม ' + money(c.loan_in) + ' − ชำระ ' + money(c.loan_repaid))}
+      ${R.sec('ทุน เงินกู้ลงทุน และกำไร')}
+      <div class="stats">${R.stat('ทุนที่ใส่', baht(c.capital_in), 'คืนแล้ว ' + money(c.capital_returned))}${R.stat('เงินกู้ลงทุนคงเหลือ', baht(c.debt_left ?? (Number(c.loan_in) - Number(c.loan_repaid))), 'ตั้งต้น ' + money(c.opening_debt || 0) + ' + กู้เพิ่ม ' + money(c.loan_in) + ' − ผ่อนแล้ว ' + money(c.loan_repaid))}
         ${R.stat('กำไรสะสม (ประมาณ)', baht(pf.cumulative_net))}${R.stat('กำไรที่ประกาศได้', baht(pf.available), 'ประกาศแล้ว ' + money(pf.declared) + (Number(pf.owner_goods) ? ' · เจ้าของหยิบสินค้า ' + money(pf.owner_goods) : ''))}</div>
       ${profitNote(pf)}
-      ${manage ? R.list([R.row({ data: { act: 'pf' }, icon: 'check', t: 'ประกาศใช้กำไร', s: 'โปะหนี้ · เก็บเป็นเงินหมุน · ลงทุนกลับร้าน · คืนทุน · จ่ายเจ้าของ' }), R.row({ data: { act: 'cap' }, icon: 'plus', t: 'บันทึกทุน ถอนเงินเจ้าของ หรือ เงินกู้' }), R.row({ href: '#/invest', icon: 'chart', t: 'เงินลงทุน / คืนทุน' })]) : ''}
+      ${manage ? R.list([R.row({ data: { act: 'pf' }, icon: 'check', t: 'ประกาศใช้กำไร', s: 'โปะเงินกู้ลงทุน · เก็บเป็นเงินหมุน · ลงทุนกลับร้าน · คืนทุน · จ่ายเจ้าของ' }), R.row({ data: { act: 'cap' }, icon: 'plus', t: 'บันทึกทุน ถอนเงินเจ้าของ หรือ เงินกู้' }), R.row({ href: '#/invest', icon: 'chart', t: 'เงินลงทุน / คืนทุน' })]) : ''}
       ${x.declarations.length || x.capital_rows.length ? R.sec('ประวัติทุนและการใช้กำไร') + R.list([
         ...x.declarations.map((d) => R.row({ data: d.status === 'done' && manage ? { pfx: d.id } : {}, static: !(d.status === 'done' && manage), off: d.status === 'cancelled', icon: 'check', t: 'ประกาศใช้กำไร · ' + PUR[d.purpose], s: `${R.date(d.declared_at)} · ${esc(d.recipient)}${!d.paid_now && !['keep_working_capital', 'reinvest'].includes(d.purpose) && d.status === 'done' ? ' · ยังไม่จ่าย' : ''}`, v: baht(d.amount) })),
         ...x.capital_rows.filter((r) => !r.profit_declaration_id && r.kind !== 'investment_item').map((r) => R.row({ data: r.status === 'done' && manage ? { capx: r.id } : {}, static: !(r.status === 'done' && manage), off: r.status === 'cancelled', icon: 'plus', t: KIND[r.kind], s: `${R.date(r.occurred_at)} · ${esc(r.party)}`, v: baht(r.amount) }))]) : ''}
       <div id="setl"></div>`;
 
+    costSummary(el).catch(R.fail);
     const SRC = { order: 'ขาย', order_refund: 'ยกเลิก/คืนเงิน', expense: 'ค่าใช้จ่าย', expense_reversal: 'กลับรายการค่าใช้จ่าย', settlement: 'รับเงิน Delivery', transfer: 'โอนระหว่างบัญชี', capital: 'ทุน/เงินกู้', profit: 'ประกาศใช้กำไร', adjustment: 'ผลต่างปิดยอด' };
     el.querySelectorAll('[data-acc]').forEach((b) => b.addEventListener('click', () => R.busy(null, async () => {
       const a = x.accounts.find((y) => y.id === b.dataset.acc);
@@ -233,8 +284,8 @@
       <label class="field"><span>เหตุผล</span><input type="text" id="r" placeholder="เช่น นำเงินสดหน้าร้านฝากธนาคาร" required></label>`, 'transfer.create',
       (m) => ({ from_account: R.segVal(m, 'f'), to_account: R.segVal(m, 't'), amount: R.val(m, '#a'), reason: R.val(m, '#r') })));
     on(el.querySelector('[data-act=cap]'), () => simple('บันทึกทุน / เงินกู้', `<div class="field"><span>ประเภท</span>${R.seg('k', Object.entries(KIND_NEW), 'capital_in', 'wrap')}</div>
-      ${Number(fc.min_working_capital) ? `<p class="muted small">ถอนเงิน/ชำระหนี้ได้เมื่อเหลือเงินหมุนอย่างน้อย ${baht(fc.min_working_capital)}</p>` : ''}
-      <label class="field"><span>ผู้ลงทุน / เจ้าหนี้</span><input type="text" id="p" required></label><label class="field"><span>จำนวน (บาท)</span><input type="number" step="0.01" min="0.01" inputmode="decimal" id="a" class="input-amt" required></label>
+      ${Number(fc.min_working_capital) ? `<p class="muted small">ถอนเงิน/ผ่อนเงินกู้ลงทุนได้เมื่อเหลือเงินหมุนอย่างน้อย ${baht(fc.min_working_capital)}</p>` : ''}
+      <label class="field"><span>ผู้ลงทุน / ผู้ให้กู้</span><input type="text" id="p" required></label><label class="field"><span>จำนวน (บาท)</span><input type="number" step="0.01" min="0.01" inputmode="decimal" id="a" class="input-amt" required></label>
       <div class="field"><span>บัญชี</span>${accSeg('acc')}</div><label class="field"><span>หมายเหตุ</span><input type="text" id="n"></label>`, 'capital.create',
       (m) => ({ kind: R.segVal(m, 'k'), party: R.val(m, '#p'), amount: R.val(m, '#a'), account_id: R.segVal(m, 'acc'), note: R.val(m, '#n') })));
     on(el.querySelector('[data-act=pf]'), () => {

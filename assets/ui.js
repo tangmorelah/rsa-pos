@@ -15,7 +15,7 @@
     employee_advance: 'ใช้เงินตัวเองจ่ายไปก่อน ขอเบิกคืนจากร้าน', owner_capital: 'เจ้าของจ่ายให้ร้าน ไม่ขอคืน นับเป็นเงินลงทุนเพิ่ม',
     credit: 'ค้างจ่าย รอบิล หรือให้เจ้าของร้านจ่ายภายหลัง',
   };
-  R.PURPOSE = { owner_draw: 'จ่ายเจ้าของ', capital_return: 'คืนทุน', loan_repayment: 'โปะหนี้', keep_working_capital: 'เก็บเป็นเงินหมุน', reinvest: 'ลงทุนกลับร้าน' };
+  R.PURPOSE = { owner_draw: 'จ่ายเจ้าของ', capital_return: 'คืนทุน', loan_repayment: 'โปะเงินกู้ลงทุน', keep_working_capital: 'เก็บเป็นเงินหมุน', reinvest: 'ลงทุนกลับร้าน' };
   R.settingVal = (k, d) => { const s = R.state.boot && R.state.boot.settings[k]; return s && s.value != null ? s.value : d; };
   // shop holidays (weekly closed days 0 = Sunday, one-off closed dates YYYY-MM-DD)
   R.WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
