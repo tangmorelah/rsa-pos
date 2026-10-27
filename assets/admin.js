@@ -229,7 +229,7 @@
   // ------------------------------------------------------------ audit
   const ACT = { login: 'เข้าสู่ระบบ', 'login.failed': 'ใส่ PIN ผิด', 'order.create': 'บันทึกออเดอร์', 'order.cancel': 'ยกเลิกออเดอร์', 'order.refund': 'คืนเงิน', 'receipt.create': 'รับของเข้า',
     'receipt.cancel': 'ยกเลิกใบรับของ', 'waste.create': 'บันทึกของเสีย', 'waste.cancel': 'ยกเลิกของเสีย', 'expense.create': 'บันทึกค่าใช้จ่าย', 'expense.approve': 'อนุมัติค่าใช้จ่าย', 'expense.pay': 'จ่ายเงิน',
-    'expense.cancel': 'ยกเลิกค่าใช้จ่าย', 'close.submit': 'ส่งรายงานปิดยอด', 'close.revise': 'แก้รายงานปิดยอด', 'close.review': 'ตรวจรายงานปิดยอด', 'stocktake.create': 'นับสต็อก', 'stocktake.approve': 'อนุมัติผลนับ',
+    'expense.cancel': 'ยกเลิกค่าใช้จ่าย', 'data.purge': 'ลบถาวร', 'close.submit': 'ส่งรายงานปิดยอด', 'close.revise': 'แก้รายงานปิดยอด', 'close.review': 'ตรวจรายงานปิดยอด', 'stocktake.create': 'นับสต็อก', 'stocktake.approve': 'อนุมัติผลนับ',
     'stocktake.reject': 'ไม่อนุมัติผลนับ', 'master.create': 'เพิ่มข้อมูลหลัก', 'master.update': 'แก้ข้อมูลหลัก', 'recipe.save': 'แก้สูตร', 'settings.save': 'ตั้งค่าร้าน', 'user.create': 'เพิ่มผู้ใช้',
     'user.update': 'แก้ผู้ใช้', 'user.permissions': 'แก้สิทธิ์', 'user.reset_pin': 'ตั้ง PIN ใหม่', export: 'ส่งออกข้อมูล', 'settlement.create': 'รับเงิน Delivery', 'transfer.create': 'โอนเงิน',
     'capital.create': 'บันทึกทุน/เงินกู้', 'profit.declare': 'ประกาศใช้กำไร', 'ledger.reconcile': 'ตรวจกับ statement', 'fixed.generate': 'สร้างค่าใช้จ่ายประจำ', 'attachment.upload': 'แนบไฟล์' };

@@ -217,6 +217,27 @@
     });
   };
 
+  // Owner / admin: remove an already-cancelled entry for good (data.purge). Asks for a reason and the word ลบ.
+  RSA.canPurge = () => ['owner', 'admin'].includes((RSA.state.boot && RSA.state.boot.me.role) || '');
+  RSA.purgeBtn = (show) => (show && RSA.canPurge() ? '<button type="button" class="btn danger" data-purge>ลบถาวร</button>' : '');
+  RSA.purge = function (root, type, id, label, done) {
+    const b = root.querySelector('[data-purge]'); if (!b) return;
+    b.addEventListener('click', () => {
+      const m = RSA.modal('ลบถาวร', `<form class="form">
+        <p class="muted">${esc(label)} จะหายจากทุกหน้าและรายงาน ยอดเงินและสต็อกไม่เปลี่ยน เพราะยกเลิกไปแล้ว ระบบเก็บสำเนาไว้ในประวัติระบบ</p>
+        <label class="field"><span class="req">เหตุผลที่ลบ</span><textarea id="pg-reason" required placeholder="เช่น ลงทดสอบ / ลงซ้ำ"></textarea></label>
+        <label class="field"><span class="req">พิมพ์คำว่า ลบ เพื่อยืนยัน</span><input id="pg-word" type="text" autocomplete="off" required></label>
+        <div class="btn-row"><button class="btn" type="button" data-close>กลับ</button><button class="btn lg danger" type="submit">ลบถาวร</button></div></form>`);
+      m.el.querySelector('form').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const reason = m.el.querySelector('#pg-reason').value.trim();
+        if (!reason) return;
+        if (m.el.querySelector('#pg-word').value.trim() !== 'ลบ') { RSA.toast('พิมพ์คำว่า ลบ ให้ถูกต้อง'); return; }
+        RSA.busy(ev.submitter, async () => { await RSA.api('data.purge', { type, id, reason }); m.close(); RSA.toast('ลบถาวรแล้ว'); done(); });
+      });
+    });
+  };
+
   // Run an async action from a button, disabling it meanwhile.
   RSA.busy = async function (btn, fn) {
     if (btn) {

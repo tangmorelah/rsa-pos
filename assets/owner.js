@@ -76,7 +76,8 @@
     if (editable) acts.push(['ed', 'แก้ไข', '']);
     if (x.wage_bill && x.status !== 'ยกเลิก' && R.can('expense.pay')) acts.push(['wage', 'จ่ายค่าจ้าง', 'primary']);
     else if (R.can('expense.pay') && (x.status === 'รอทำจ่าย' || (x.status === 'รออนุมัติ' && R.can('expense.approve')))) acts.push(['pay', x.status === 'รออนุมัติ' ? 'อนุมัติและจ่าย' : 'จ่ายเงิน', 'primary']);
-    m.el.querySelector('#acts').innerHTML = acts.map(([k, l, c]) => `<button class="btn lg ${c}" data-a="${k}">${l}</button>`).join('');
+    m.el.querySelector('#acts').innerHTML = acts.map(([k, l, c]) => `<button class="btn lg ${c}" data-a="${k}">${l}</button>`).join('') + R.purgeBtn(x.status === 'ยกเลิก' && !x.receipt_id && !x.fixed_expense_id && x.fund_source !== 'payroll' && !x.advance_user_id);
+    R.purge(m.el, 'expense', x.id, x.expense_no + ' ' + x.description, () => { m.close(); done(); });
     on(m.el.querySelector('[data-a=ok]'), (ev) => R.busy(ev.currentTarget, async () => { await R.api('expense.approve', { expense_id: x.id }); m.close(); R.toast('บันทึกแล้ว'); done(); }));
     on(m.el.querySelector('[data-a=pay]'), () => { m.close(); paySheet(x, done); });
     on(m.el.querySelector('[data-a=wage]'), () => { m.close(); location.hash = '#/staff'; });
