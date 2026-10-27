@@ -295,6 +295,7 @@ begin
     when 'dashboard.home'     then rsa__dashboard_home(u, p)
     when 'cashflow.months'    then rsa__cashflow_months(u, p)
     when 'cashflow.calendar'  then rsa__cashflow_calendar(u, p)
+    when 'data.purge'         then rsa__data_purge(u, p)
     when 'recurring.list'     then rsa__recurring_list(u, p)
     else (select jsonb_build_object('error', 'ไม่รู้จักคำสั่ง ' || p_action))
   end;

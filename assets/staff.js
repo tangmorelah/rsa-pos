@@ -71,9 +71,10 @@
       ${o.note ? `<p class="muted">${esc(o.note)}</p>` : ''}
       ${o.events.length ? R.sec('ประวัติ') + o.events.map((e) => `<div class="note">${e.kind === 'cancel' ? 'ยกเลิก' : 'คืนเงิน'} ${money(e.amount)} · ${esc(e.reason)} · ${esc(e.by)} ${R.dt(e.created_at)}</div>`).join('') : ''}
       <div class="btn-row">${canEdit(o) ? '<button class="btn lg" id="ed">แก้ไข</button><button class="btn lg danger" id="x">ยกเลิก</button>' : ''}
-        ${R.can('sales.cancel') && o.status !== 'cancelled' ? '<button class="btn" id="rf">คืนเงิน</button>' : ''}</div>
+        ${R.can('sales.cancel') && o.status !== 'cancelled' ? '<button class="btn" id="rf">คืนเงิน</button>' : ''}${R.purgeBtn(o.status === 'cancelled' && !o.settlement_id)}</div>
       ${!canEdit(o) && o.status !== 'cancelled' && !R.can('sales.cancel') ? '<p class="muted small">แก้ไขได้เฉพาะออเดอร์ของตัวเองวันนี้ก่อนส่งรายงานปิดยอด ถ้าต้องแก้รายการอื่นให้แจ้งเจ้าของร้าน</p>' : ''}`);
     on(m.el.querySelector('#ed'), () => { m.close(); R.state.editOrder = o; location.hash = '#/sell/edit'; });
+    R.purge(m.el, 'order', o.id, 'ออเดอร์ ' + o.order_no, () => { m.close(); done(); });
     on(m.el.querySelector('#x'), async () => {
       m.close();
       const r = await R.askReason('ยกเลิกออเดอร์ ' + o.order_no, { text: (o.closed ? 'วันนี้ส่งรายงานปิดยอดแล้ว เจ้าของร้านจะเห็นรายการนี้ · ' : '') + 'ระบบคืนสต็อกและบันทึกเงินออกให้ รายการเดิมยังอยู่ในประวัติ', ok: 'ยกเลิกออเดอร์', danger: true });
@@ -401,7 +402,8 @@
       ${r.pay_method || r.payer ? `<p class="muted small">จ่ายโดย ${esc(PM[r.pay_method] || r.pay_method || '-')} · ผู้ออกเงิน ${esc(PAYER[r.payer] || r.payer || '-')}</p>` : ''}
       ${r.expense ? `<p>ค่าใช้จ่าย ${esc(r.expense.expense_no)} ${R.statusPill(r.expense.status)}</p>` : ''}${R.attachLinks(r.attachments)}
       ${r.cancel_reason ? `<div class="note">ยกเลิก: ${esc(r.cancel_reason)}</div>` : ''}
-      ${R.can('stock.cancel') && r.status !== 'cancelled' ? '<button class="btn danger" id="x">ยกเลิกใบรับของ</button>' : ''}`);
+      ${R.can('stock.cancel') && r.status !== 'cancelled' ? '<button class="btn danger" id="x">ยกเลิกใบรับของ</button>' : ''}${R.purgeBtn(r.status === 'cancelled')}`);
+    R.purge(m.el, 'receipt', r.id, 'ใบรับของ ' + r.receipt_no, () => { m.close(); R.route(); });
     on(m.el.querySelector('#x'), async () => {
       m.close();
       const x = await R.askReason('ยกเลิกใบรับของ', { text: 'สต็อกจะถูกตัดออก และค่าใช้จ่ายที่ผูกไว้จะถูกยกเลิกด้วย', danger: true, ok: 'ยกเลิกใบรับของ' });
@@ -489,9 +491,15 @@
       const list = await R.api('waste.list', { from: R.addDays(R.today(), -7) });
       el.querySelector('#recent').innerHTML = R.sec('7 วันล่าสุด') + R.list(list.map((w) => R.row({ data: { w: w.id }, icon: 'trash', tone: 'warn', off: w.status === 'cancelled',
         t: `${esc(w.item_name)} ${qty(w.qty)} ${esc(w.unit)}`, s: `${R.dt(w.occurred_at)} · ${esc(w.reason)} · ${esc(w.created_by_name)}${w.close_id ? ' · จากปิดยอด' : ''}`,
-        pill: w.kind && w.kind !== 'waste' ? `<span class="pill">${R.WASTE_KIND[w.kind]}</span>` : '', chev: R.can('stock.cancel') && w.status !== 'cancelled' })), 'ยังไม่มีของเสียใน 7 วัน');
+        pill: w.kind && w.kind !== 'waste' ? `<span class="pill">${R.WASTE_KIND[w.kind]}</span>` : '', chev: R.can('stock.cancel') && (w.status !== 'cancelled' || R.canPurge()) })), 'ยังไม่มีของเสียใน 7 วัน');
       if (R.can('stock.cancel')) el.querySelectorAll('[data-w]').forEach((b) => b.addEventListener('click', async () => {
-        const w = list.find((x) => x.id === b.dataset.w); if (w.status === 'cancelled') return;
+        const w = list.find((x) => x.id === b.dataset.w);
+        if (w.status === 'cancelled') {
+          if (!R.canPurge()) return;
+          const m = R.modal('รายการที่ยกเลิกแล้ว', `<p>${esc(w.item_name)} ${qty(w.qty)} ${esc(w.unit)}</p><div class="note">ยกเลิก: ${esc(w.cancel_reason || '')}</div><div class="btn-row">${R.purgeBtn(true)}</div>`);
+          R.purge(m.el, 'waste', w.id, `${w.item_name} ${qty(w.qty)} ${w.unit}`, () => { m.close(); R.route(); });
+          return;
+        }
         const r = await R.askReason('ยกเลิกรายการของเสีย', { text: `${w.item_name} ${qty(w.qty)} ${w.unit} · ระบบคืนสต็อกให้`, danger: true, ok: 'ยกเลิกรายการ' });
         if (r) R.busy(null, async () => { await R.api('waste.cancel', { waste_id: w.id, reason: r.reason }); R.route(); });
       }));
