@@ -219,23 +219,13 @@
       ${R.list(x.accounts.map((a) => R.row({ data: { acc: a.id }, icon: a.is_drawer ? 'wallet' : 'receipt', t: esc(a.name),
         s: a.is_drawer ? 'เงินสดหน้าร้าน · นับตอนปิดยอด' : Number(a.unreconciled) ? `ยังไม่ตรวจกับ statement ${a.unreconciled} รายการ` : 'ตรวจกับ statement ครบ', v: baht(a.balance),
         pill: a.opening_confirmed ? '' : '<span class="pill warn">ยอดยกมายังไม่ยืนยัน</span>' })))}
+      ${R.can('cashflow.view') ? `${R.sec('เงินเข้า-ออกรายวัน')}<div id="cal" class="card"><div class="boot">กำลังโหลดปฏิทิน…</div></div>` : ''}
       ${R.sec('เตรียมเงินรายเดือน')}
       <div class="mp-chart card">${moneyChart(mp)}</div>
       <div class="mp-months">${mp.months.map(monthCard).join('')}</div>
       <p class="muted small" style="padding:0 4px">เงินคาดการณ์ = เงินตอนนี้ + ยอดขายและเงิน Delivery ที่คาดว่าจะเข้า − ค่าใช้จ่ายทั่วไปเฉลี่ย − รายการที่ต้องจ่าย ใช้ดูทิศทางเท่านั้น</p>
       ${R.can('report.view') ? `${R.sec('ต้นทุนและงบเดือนนี้')}<div class="card" id="costsum"><div class="boot">กำลังโหลด…</div></div><div id="costfull" hidden></div>` : ''}
       ${manage ? R.list([R.row({ data: { act: 'tr' }, icon: 'flow', t: 'โอนเงินระหว่างบัญชี', s: 'เช่น นำเงินสดหน้าร้านฝากธนาคาร' })]) : ''}
-      ${R.sec('คาดการณ์เงินสด 7 / 14 / 30 วัน')}
-      ${Number(fc.min_working_capital) ? `<p class="muted small" style="padding:0 4px">เงินหมุนขั้นต่ำที่ต้องกันไว้ ${baht(fc.min_working_capital)}</p>` : ''}
-      ${R.table([{ l: 'ช่วง', f: (h) => h.days + ' วันข้างหน้า' }, { l: 'Delivery เข้า', num: true, f: (h) => '+' + money(h.delivery_in) },
-        { l: 'ยอดขายหน้าร้าน (ประมาณ)', num: true, f: (h) => '+' + money(h.est_sales) }, { l: 'ค้างจ่าย', num: true, f: (h) => '−' + money(h.payables) },
-        { l: 'ค่าใช้จ่ายประจำ', num: true, f: (h) => '−' + money(h.fixed) }, { l: 'ผ่อนเงินกู้ลงทุน', num: true, f: (h) => (Number(h.debt) ? '−' + money(h.debt) : '-') },
-        { l: 'ใช้จ่ายทั่วไป (ประมาณ)', num: true, f: (h) => '−' + money(h.est_spend) },
-        { l: 'คาดว่าคงเหลือ', num: true, main: true, f: (h) => { const e = Number(fc.cash_now) + Number(h.delivery_in) + Number(h.est_sales) - Number(h.payables) - Number(h.fixed) - Number(h.debt || 0) - Number(h.est_spend);
-          return `<b style="color:${e < Number(fc.min_working_capital || 0) ? 'var(--bad)' : 'inherit'}">${baht(e)}</b>`; } }], fc.horizons)}
-      <div class="stats">${R.stat('ขายหน้าร้านเฉลี่ย/วัน', baht(fc.avg_daily_storefront), '14 วันล่าสุด')}${R.stat('จ่ายเฉลี่ย/วัน', baht(fc.avg_daily_outflow), '30 วันล่าสุด')}
-        ${R.stat('เงินพอใช้ (Runway)', fc.runway_days != null ? fc.runway_days + ' วัน' : '-', 'ถ้าไม่มีเงินเข้าเลย')}${R.stat('ค่าใช้จ่ายประจำที่ยังไม่ยืนยัน', fc.unconfirmed_fixed.length + ' รายการ', fc.unconfirmed_fixed.map((f) => esc(f.name)).join(', '))}</div>
-      <p class="muted small" style="padding:0 4px">ยอดขายและค่าใช้จ่ายทั่วไปเป็นค่าเฉลี่ยจากข้อมูลจริงที่ผ่านมา ใช้ดูทิศทางเท่านั้น</p>
       ${R.sec('รอรับเงินจาก Delivery')}
       ${R.list(x.receivables.map((r) => R.row({ data: { set: r.channel_id, from: r.oldest }, icon: 'flow', t: esc(r.channel_name), s: `${r.orders} ออเดอร์ · ครบรอบ ${R.date(r.expected_by)}`, v: baht(r.est_net), vs: manage ? 'แตะเมื่อเงินเข้า' : 'หลังหักค่าธรรมเนียม' })), 'ไม่มียอดค้างรับ')}
       ${R.sec('ค้างจ่าย', x.payables.length ? '<a href="#/approvals">จัดการ</a>' : '')}
@@ -251,6 +241,7 @@
       <div id="setl"></div>`;
 
     costSummary(el).catch(R.fail);
+    if (el.querySelector('#cal')) calendar(el.querySelector('#cal')).catch(R.fail);
     const SRC = { order: 'ขาย', order_refund: 'ยกเลิก/คืนเงิน', expense: 'ค่าใช้จ่าย', expense_reversal: 'กลับรายการค่าใช้จ่าย', settlement: 'รับเงิน Delivery', transfer: 'โอนระหว่างบัญชี', capital: 'ทุน/เงินกู้', profit: 'ประกาศใช้กำไร', adjustment: 'ผลต่างปิดยอด' };
     el.querySelectorAll('[data-acc]').forEach((b) => b.addEventListener('click', () => R.busy(null, async () => {
       const a = x.accounts.find((y) => y.id === b.dataset.acc);
@@ -326,10 +317,32 @@
     cancelBtn('[data-slx]', 'settlement.cancel', 'settlement_id');
   });
 
+  // ------------------------------------------------------------ money in / out calendar: real numbers up to today, scheduled ones ahead
+  const kfmt = (v) => { const a = Math.abs(Number(v)); return (a >= 1000 ? (Math.round(a / 100) / 10).toLocaleString('th-TH') + 'k' : Math.round(a).toLocaleString('th-TH')); };
+  let calMonth = null;
+  async function calendar(box) {
+    const m0 = calMonth || R.today().slice(0, 8) + '01', c = await R.api('cashflow.calendar', { month: m0 }), sm = c.summary;
+    const lead = new Date(m0 + 'T12:00:00Z').getUTCDay();
+    const tile = (cls, t, x) => `<div class="cal-sum ${cls}"><span>${t}</span><b>${baht(x.amount)}</b><small>${x.count} รายการ</small></div>`;
+    box.innerHTML = `<div class="cal-head"><button type="button" class="btn small ghost" data-cm="-1" aria-label="เดือนก่อน">‹</button><h2>${esc(monthName(m0))}</h2><button type="button" class="btn small ghost" data-cm="1" aria-label="เดือนถัดไป">›</button></div>
+      <div class="cal-sums">${tile('in', 'เงินเข้า', sm.in)}${tile('late', 'ค้างรับเกินเวลา', sm.overdue_in)}${tile('exp', 'เงินคาดว่าจะเข้า', sm.expect_in)}
+        ${tile('out', 'เงินออก', sm.out)}${tile('late', 'ค้างจ่ายเกินเวลา', sm.overdue_out)}${tile('exp', 'เงินคาดว่าจะออก', sm.expect_out)}</div>
+      <div class="cal-grid">${R.WEEKDAYS.map((d) => `<div class="cal-wd">${d}</div>`).join('')}${'<div></div>'.repeat(lead)}
+        ${c.days.map((d) => { const net = Number(d.in) - Number(d.out), has = Number(d.in) || Number(d.out);
+          return `<button type="button" class="cal-day ${d.future ? 'future' : ''} ${d.date === c.today ? 'today' : ''}" data-cd="${d.date}" ${has ? '' : 'disabled'}>
+            <span class="dn">${Number(d.date.slice(8))}</span>${has ? `<span class="net ${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}${kfmt(net)}</span>
+            <span class="io">${Number(d.in) ? `<i class="pos">+${money(d.in)}</i>` : ''}${Number(d.out) ? `<i class="neg">−${money(d.out)}</i>` : ''}</span>` : ''}</button>`; }).join('')}</div>
+      <p class="muted small">ถึงวันนี้เป็นเงินเข้า-ออกจริง (ไม่นับโอนระหว่างบัญชีร้าน) · วันข้างหน้า (ตัวจาง) เป็นรายการที่ถึงกำหนด: ค่าใช้จ่ายประจำ บิลรอจ่าย ผ่อนเงินกู้ลงทุน และเงิน Delivery ที่จะเข้า</p>`;
+    box.querySelectorAll('[data-cm]').forEach((b) => b.addEventListener('click', () => { const d = new Date(m0 + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + Number(b.dataset.cm)); calMonth = d.toISOString().slice(0, 8) + '01'; calendar(box).catch(R.fail); }));
+    box.querySelectorAll('[data-cd]').forEach((b) => b.addEventListener('click', () => { const d = c.days.find((x) => x.date === b.dataset.cd);
+      R.modal(R.date(d.date) + (d.future ? ' · คาดการณ์' : ''), `${R.mlist([['', d.items.map((i) => R.mrow(i.label + (i.count > 1 ? ` · ${i.count} รายการ` : ''), `<span style="color:${i.dir === 'in' ? 'var(--ok)' : 'var(--bad)'}">${i.dir === 'in' ? '+' : '−'}${money(i.amount)}</span>`))]])}
+        <div class="sum-row"><span>สุทธิ</span><b>${signed(Number(d.in) - Number(d.out))}</b></div>`); }));
+  }
+
   // ------------------------------------------------------------ all expenses
   R.def('expenses', { title: 'ค่าใช้จ่ายทั้งหมด', back: 'more' }, async function (el) {
     let tab = R.store.get('exp.tab') || '';
-    const TABS = [['', 'ทั้งหมด'], ['รออนุมัติ', 'รออนุมัติ'], ['รอทำจ่าย', 'รอทำจ่าย'], ['จ่ายแล้ว', 'จ่ายแล้ว'], ['docs', 'รอเอกสาร'], ['ยกเลิก', 'ยกเลิก'], ['fixed', 'ค่าใช้จ่ายประจำ']];
+    const TABS = [['', 'ทั้งหมด'], ['fixed', 'ค่าใช้จ่ายประจำ'], ['รออนุมัติ', 'รออนุมัติ'], ['รอทำจ่าย', 'รอทำจ่าย'], ['จ่ายแล้ว', 'จ่ายแล้ว'], ['docs', 'รอเอกสาร'], ['ยกเลิก', 'ยกเลิก']];
     async function draw() {
       const r = R.periodRange(), sm = await R.api('report.expenses', r);
       el.innerHTML = `${R.sectTabs('expenses')}${R.periodBar({ compare: false })}
@@ -356,9 +369,11 @@
       body.querySelectorAll('[data-x]').forEach((b) => b.addEventListener('click', () => expenseSheet(list.find((y) => y.id === b.dataset.x), () => draw().catch(R.fail))));
     }
     async function fixed(body) {
-      const list = await R.api('master.list', { entity: 'fixed_expenses' });
+      const [list, rl] = await Promise.all([R.api('master.list', { entity: 'fixed_expenses' }), R.api('recurring.list', {})]);
+      const nextDue = Object.fromEntries(rl.fixed.map((f) => [f.id, f.next_due]));
       body.innerHTML = `<p class="muted small" style="padding:0 4px">ระบบสร้างรายการ "รอทำจ่าย" ให้เองทุกรอบ (รายเดือนหรือรายสัปดาห์) ไม่สร้างซ้ำ จ่ายแล้วเปลี่ยนเป็น "จ่ายแล้ว"</p>
-        ${R.list(list.map((f) => R.row({ data: { f: f.id }, icon: 'calendar', off: !f.active, t: esc(f.name), s: `${f.frequency === 'weekly' ? 'ทุก' + WD[f.weekday] : 'ทุกวันที่ ' + f.due_day}${f.confirmed === false ? ' · ประมาณการ (ยังไม่ยืนยัน)' : ''}${f.payee ? ' · ' + esc(f.payee) : ''}${f.this_month ? ' · เดือนนี้ ' + esc(f.this_month.status) : ''}${f.note ? ' · ' + esc(f.note) : ''}`, v: baht(f.amount), pill: f.confirmed === false ? R.unconfirmed() : '' })), 'ยังไม่มี เช่น ค่าเช่า ค่าจ้าง ค่าอินเทอร์เน็ต')}
+        ${R.list(list.map((f) => R.row({ data: { f: f.id }, icon: 'calendar', off: !f.active, t: esc(f.name), s: `${f.frequency === 'weekly' ? 'ทุก' + WD[f.weekday] : 'ทุกวันที่ ' + f.due_day}${f.active && nextDue[f.id] ? ' · ครั้งถัดไป ' + esc(R.date(nextDue[f.id])) : ''}${f.confirmed === false ? ' · ประมาณการ (ยังไม่ยืนยัน)' : ''}${f.payee ? ' · ' + esc(f.payee) : ''}${f.this_month ? ' · เดือนนี้ ' + esc(f.this_month.status) : ''}${f.note ? ' · ' + esc(f.note) : ''}`, v: baht(f.amount), pill: f.confirmed === false ? R.unconfirmed() : '' })), 'ยังไม่มี เช่น ค่าเช่า ค่าจ้าง ค่าอินเทอร์เน็ต')}
+        ${rl.loan.length ? R.sec('ผ่อนเงินกู้ลงทุน') + R.list(rl.loan.map((x) => R.row({ static: true, icon: 'wallet', off: !Number(x.left), t: 'งวด ' + x.n, s: R.date(x.due) + (Number(x.left) ? (Number(x.paid) ? ' · จ่ายแล้ว ' + money(x.paid) : '') : ' · จ่ายครบแล้ว'), v: baht(x.amount) }))) : ''}
         ${R.can('expense.approve') ? '<div class="btn-row"><button class="btn" id="gen">สร้างรายการเดือนนี้</button><button class="btn primary" id="add">+ เพิ่มรายการประจำ</button></div>' : ''}`;
       const edit = (f) => {
         f = f || { active: true, due_day: 1, start_month: R.today().slice(0, 8) + '01', auto_approve: false };
