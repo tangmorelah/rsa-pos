@@ -168,19 +168,37 @@
     function recipe(p) {
       const items = lookups.stock_items.filter((s) => s.active);
       const lines = p.recipe.map((l) => ({ stock_item_id: l.stock_item_id, qty: l.qty }));
+      // suggest the product's main raw material until it is in the recipe
+      const pickNext = () => (p.main_stock_item_id && items.some((x) => x.id === p.main_stock_item_id) && !lines.some((l) => l.stock_item_id === p.main_stock_item_id) ? p.main_stock_item_id : null);
+      let pick = pickNext();
+      const exUnit = (items.find((x) => x.id === p.main_stock_item_id) || {}).unit || 'กิโลกรัม';
       const m = R.modal('สูตร: ' + p.name, '<div id="rc" class="form"></div>');
       const draw2 = () => {
         let cost = 0, missing = false;
         lines.forEach((l) => { const s = items.find((x) => x.id === l.stock_item_id); if (s) { cost += l.qty * s.avg_cost; if (!Number(s.avg_cost)) missing = true; } });
-        m.el.querySelector('#rc').innerHTML = `<p class="muted small">ขาย ${esc(p.name)} 1 ${esc(p.unit)} ใช้อะไรเท่าไร ระบบตัดสต็อกและคิดต้นทุนเฉพาะสินค้าที่มีสูตร ไม่รู้ก็เว้นไว้ก่อนได้</p>
+        m.el.querySelector('#rc').innerHTML = `<p class="muted small">ขาย ${esc(p.name)} <b>1 ${esc(p.unit)}</b> ใช้วัตถุดิบเท่าไร เช่น 1 ${esc(exUnit)} แบ่งได้ 2 ${esc(p.unit)} ใส่ 0.5 · ใส่แล้วระบบตัดสต็อกและคิดต้นทุนให้ ไม่รู้เว้นไว้ก่อนได้ ขายได้ปกติ</p>
           ${R.list(lines.map((l, i) => { const s = items.find((x) => x.id === l.stock_item_id) || {}; return R.row({ data: { del: i }, icon: 'box', t: esc(s.name || '?'), s: `${R.qty(l.qty)} ${esc(s.unit || '')} ต่อ 1 ${esc(p.unit)} · แตะเพื่อลบ`, v: s.avg_cost ? money(l.qty * s.avg_cost) : '-', chev: false }); }), 'ยังไม่มีวัตถุดิบในสูตร')}
-          <div class="card flat"><div class="two"><label class="field"><span>วัตถุดิบ</span><select id="s"><option value="">เลือก…</option>${R.opts(items, null, (x) => x.name + ' (' + x.unit + ')')}</select></label>
-            <label class="field"><span>ใช้เท่าไร</span><input type="number" id="q" step="any" min="0" inputmode="decimal"></label></div><button type="button" class="btn" id="addl">+ เพิ่มในสูตร</button></div>
+          <div class="card flat"><div class="two"><label class="field"><span>วัตถุดิบ</span><select id="s"><option value="">เลือก…</option>${R.opts(items, pick, (x) => x.name + ' (' + x.unit + ')')}</select></label>
+            <label class="field"><span id="ql">ใช้เท่าไร</span><input type="number" id="q" step="any" min="0" inputmode="decimal"></label></div><p class="muted small" id="qc"></p>
+            <div class="two"><label class="field"><span>หรือ: 1</span><select id="ru"></select></label>
+              <label class="field"><span>แบ่งได้กี่ ${esc(p.unit)}</span><input type="number" id="n" step="any" min="0" inputmode="decimal" placeholder="เช่น 6"></label></div>
+            <p class="muted small" id="nc"></p><button type="button" class="btn" id="addl">+ เพิ่มในสูตร</button></div>
           <div class="sum-row"><span>ต้นทุนโดยประมาณ${missing ? ' (บางรายการยังไม่มีต้นทุน)' : ''}</span><b>${baht(cost)}</b></div><div class="sum-row"><span>ราคาขาย</span><b>${baht(p.price)}</b></div>
           <button type="button" class="btn primary lg" id="saver">บันทึกสูตร</button>`;
-        m.el.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { lines.splice(b.dataset.del, 1); draw2(); }));
-        on(m.el.querySelector('#addl'), () => { const s = R.val(m.el, '#s'), q = Number(R.val(m.el, '#q')); if (!s || !(q > 0)) return R.fail(new Error('เลือกวัตถุดิบและใส่จำนวน'));
-          const ex = lines.find((l) => l.stock_item_id === s); if (ex) ex.qty = q; else lines.push({ stock_item_id: s, qty: q }); draw2(); });
+        m.el.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { lines.splice(b.dataset.del, 1); pick = pickNext(); draw2(); }));
+        const unitsOf = (it) => (it ? [{ unit: it.unit, factor: 1 }, ...(it.count_units || []).filter((x) => x.unit && Number(x.factor) > 0)] : []);
+        const perBox = () => { const it = items.find((x) => x.id === R.val(m.el, '#s')), u = unitsOf(it).find((x) => x.unit === R.val(m.el, '#ru')), n = Number(R.val(m.el, '#n'));
+          return it && u && n > 0 ? Number(u.factor) / n : null; };
+        const nHint = () => { const v = perBox(), it = items.find((x) => x.id === R.val(m.el, '#s'));
+          m.el.querySelector('#nc').textContent = v ? `= ${R.qty(Math.round(v * 1000) / 1000)} ${it.unit} ต่อ 1 ${p.unit}` : 'ไม่รู้น้ำหนัก ใส่แบบนี้ได้ เช่น แตงโม 1 ลูกได้ 6 กล่อง (ต้องมีหน่วย "ลูก" ที่วัตถุดิบนั้น)'; };
+        const unitHint = () => { const it = items.find((x) => x.id === R.val(m.el, '#s'));
+          m.el.querySelector('#ru').innerHTML = unitsOf(it).map((x) => `<option value="${esc(x.unit)}">${esc(x.unit)}</option>`).join(''); nHint();
+          m.el.querySelector('#ql').textContent = it ? `ใช้กี่ ${it.unit} ต่อ 1 ${p.unit}` : 'ใช้เท่าไร';
+          m.el.querySelector('#qc').textContent = it && Number(it.avg_cost) ? `ต้นทุน ${baht(it.avg_cost)} ต่อ ${it.unit}` : ''; };
+        m.el.querySelector('#s').addEventListener('change', unitHint); unitHint();
+        m.el.querySelector('#ru').addEventListener('change', nHint); m.el.querySelector('#n').addEventListener('input', nHint);
+        on(m.el.querySelector('#addl'), () => { const s = R.val(m.el, '#s'), q = Number(R.val(m.el, '#q')) || Math.round((perBox() || 0) * 10000) / 10000; if (!s || !(q > 0)) return R.fail(new Error('เลือกวัตถุดิบ แล้วใส่ "ใช้เท่าไร" หรือ "แบ่งได้กี่ ' + p.unit + '"'));
+          const ex = lines.find((l) => l.stock_item_id === s); if (ex) ex.qty = q; else lines.push({ stock_item_id: s, qty: q }); pick = pickNext(); draw2(); });
         on(m.el.querySelector('#saver'), (ev) => R.busy(ev.currentTarget, async () => { await R.api('recipe.save', { product_id: p.id, lines }); m.close(); R.toast('บันทึกสูตรแล้ว'); await afterSave(); }));
       };
       draw2();

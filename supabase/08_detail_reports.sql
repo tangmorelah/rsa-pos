@@ -524,7 +524,7 @@ begin
                    from products p2 where p2.active),
     'promotions', (select coalesce(jsonb_agg(to_jsonb(pr)), '[]') from promotions pr
                    where pr.active and (pr.starts_at is null or pr.starts_at <= now()) and (pr.ends_at is null or pr.ends_at > now())),
-    'stock_items', (select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'code', s.code, 'name', s.name, 'unit', s.unit, 'kind', s.kind) order by s.code nulls last, s.name), '[]')
+    'stock_items', (select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'code', s.code, 'name', s.name, 'unit', s.unit, 'kind', s.kind, 'count_units', s.count_units, 'avg_cost', case when rsa_has(u, 'expense.approve') then s.avg_cost end) order by s.code nulls last, s.name), '[]')
                    from stock_items s where s.active),
     'units', (select coalesce(jsonb_agg(name order by name), '[]') from units where active),
     'categories', (select coalesce(jsonb_agg(to_jsonb(c) order by coalesce(c.grp, 'B'), c.sort_order, c.code nulls last, c.name), '[]') from expense_categories c

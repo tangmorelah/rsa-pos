@@ -117,7 +117,7 @@
     const cats = [...new Set(products.map((p) => p.category).filter(Boolean))].sort((a, b) => ((order.indexOf(a) + 1) || 999) - ((order.indexOf(b) + 1) || 999));
 
     el.innerHTML = `${edit ? `<div class="note info">กำลังแก้ไขออเดอร์ ${esc(edit.order_no)} (${R.time(edit.created_at)}) · ระบบยกเลิกรายการเดิมและบันทึกรายการใหม่เวลาเดิม <a href="#/sell">ยกเลิกการแก้ไข</a></div>` : ''}
-      <div class="pos-top"><div class="field"><span>ช่องทาง / รับเงินทาง</span>${R.seg('ch', channels.map((c) => [c.id, c.name]), st.channel, 'wrap')}</div>
+      <div class="pos-top"><div class="field"><span class="req">ช่องทาง / รับเงินทาง</span>${R.seg('ch', channels.map((c) => [c.id, c.name]), st.channel, 'wrap')}</div>
         <div id="mdbox"></div>
         ${cats.length > 1 ? `<div class="chips" id="cats"><button class="chip" data-cat="" aria-pressed="true">ทั้งหมด</button>${cats.map((c) => `<button class="chip" data-cat="${esc(c)}" aria-pressed="false">${esc(c)}</button>`).join('')}</div>` : ''}</div>
       <div class="prows" id="prods"></div>
@@ -268,7 +268,7 @@
   function fundBlock(name, dflt) {
     const accounts = B().accounts.filter((a) => !a.is_drawer);
     const v = dflt || 'shop_cash';
-    return `<div class="field"><span>แหล่งเงินที่ใช้จ่าย</span><select id="${name}">${fundOptions().map((k) => `<option value="${k}" ${k === v ? 'selected' : ''}>${esc(R.FUND[k])}</option>`).join('')}</select>
+    return `<div class="field"><span class="req">แหล่งเงินที่ใช้จ่าย</span><select id="${name}">${fundOptions().map((k) => `<option value="${k}" ${k === v ? 'selected' : ''}>${esc(R.FUND[k])}</option>`).join('')}</select>
         <span class="muted small" id="${name}-help">${esc(R.FUND_HELP[v])}</span></div>
       ${R.can('expense.pay') && accounts.length ? `<label class="field" id="${name}-accbox" hidden><span>จ่ายจากบัญชี</span><select id="${name}-acc">${R.opts(accounts)}</select></label>` : ''}
       <label class="field" id="${name}-refbox" hidden><span class="req">เลขอ้างอิง / เลขที่สลิป</span><input type="text" id="${name}-ref" placeholder="ดูจากสลิปโอน"></label>`;
@@ -302,28 +302,29 @@
   }
   R.def('receive', { title: 'รับสินค้า / ซื้อของเข้า', back: 'home' }, async function (el) {
     const items = B().stock_items, sups = B().suppliers;
-    const evReq = !!R.settingVal('evidence_required', false);
-    const aw = R.attachWidget('rcv', [['bill', 'บิล/ใบส่งของ'], ['receipt', 'ใบเสร็จ'], ['tax_invoice', 'ใบกำกับภาษี'], ['photo', 'รูปของที่รับ']], 'รูปบิล / ของที่รับ', { required: evReq });
+    const aw = R.attachWidget('rcv', [['bill', 'บิล/ใบส่งของ'], ['receipt', 'ใบเสร็จ'], ['slip', 'สลิปโอน'], ['tax_invoice', 'ใบกำกับภาษี'], ['photo', 'รูปของที่รับ']], 'รูปบิล / สลิป', { required: true, noProof: true });
     const lines = [];
     const transDefault = Number(R.settingVal('transport_default', 0)) || 0;
     el.innerHTML = `${items.length ? '' : '<div class="note">ยังไม่มีรายการวัตถุดิบ ให้เจ้าของร้านเพิ่มที่ เพิ่มเติม › ข้อมูลหลัก</div>'}
       <form class="form" id="f" onsubmit="return false">
-        <div class="card"><label class="field"><span>ซื้อจาก</span><select id="sup"><option value="">พิมพ์ชื่อร้านเอง</option>${R.opts(sups)}</select></label>
-          <label class="field" id="supname-box"><span>ชื่อร้าน / แผง</span><input type="text" id="supname" placeholder="เช่น ตลาดไท แผง 12"></label></div>
+        <div class="card"><label class="field"><span class="req">ซื้อจาก</span><select id="sup"><option value="">พิมพ์ชื่อร้านเอง</option>${R.opts(sups)}</select></label>
+          <label class="field" id="supname-box"><span class="req">ชื่อร้าน / แผง / คนที่ซื้อให้</span><input type="text" id="supname" placeholder="เช่น ตลาดไท แผง 12 หรือ เจ้าของซื้อมาให้"></label>
+          <label class="check"><input type="checkbox" id="later"> ไม่รู้ราคา (เจ้าของใส่ราคาทีหลัง)</label>
+          <p class="muted small" id="later-help" hidden>ของเข้าสต็อกเลย ใบนี้จะไปรอให้เจ้าของใส่ราคาและวิธีจ่าย</p></div>
         ${R.sec('ของที่รับ', '<button type="button" id="add">+ เพิ่มของ</button>')}
         <div id="lines"></div>
-        <div class="card"><h2>ค่าขนส่งรอบนี้</h2>
+        <div class="card" id="trans-card"><h2>ค่าขนส่งรอบนี้</h2>
           <div class="two"><label class="field"><span>ค่าขนส่งทั้งรอบ (บาท)</span><input type="number" id="trans" min="0" step="0.01" inputmode="decimal" value="" placeholder="0"></label>
-          <label class="field"><span>เฉลี่ยเข้าต้นทุน</span><select id="tm">${Object.entries(ALLOC).map(([k, l]) => `<option value="${k}" ${k === R.settingVal('transport_method', 'value') ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+          <label class="field" ${R.can('expense.approve') ? '' : 'hidden'}><span>เฉลี่ยเข้าต้นทุน</span><select id="tm">${Object.entries(ALLOC).map(([k, l]) => `<option value="${k}" ${k === R.settingVal('transport_method', 'value') ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
           ${transDefault ? `<button type="button" class="btn small" id="tdef">ใช้ค่ารอบตลาดปกติ ${baht(transDefault)}</button>` : ''}
           <p class="muted small">ค่าขนส่งถูกเฉลี่ยเข้าต้นทุนต่อหน่วยของของที่รับ (ต้นทุนถึงร้าน)</p></div>
-        <div class="card"><h2>จ่ายเงินอย่างไร</h2>
-          <div class="field"><span>วิธีจ่าย</span>${R.seg('pm', [['shop_bank', 'บัญชีร้าน'], ['shop_cash', 'เงินสดร้าน'], ['credit', 'เครดิต'], ['unpaid', 'ยังไม่จ่าย'], ['none', 'ไม่บันทึกจ่าย']], 'shop_cash', 'wrap')}</div>
-          <div class="field"><span>ใครออกเงินจริง</span>${R.seg('payer', [['shop', 'ร้าน'], ['owner', 'เจ้าของ'], ['employee', 'พนักงาน']], 'shop')}</div>
+        <div class="card" id="pay-card"><h2>จ่ายเงินอย่างไร</h2>
+          <div class="field"><span class="req">วิธีจ่าย</span>${R.seg('pm', [['shop_bank', 'บัญชีร้าน'], ['shop_cash', 'เงินสดร้าน'], ['credit', 'เครดิต'], ['unpaid', 'ยังไม่จ่าย'], ['none', 'จ่ายรวมบิลอื่นแล้ว']], 'shop_cash', 'wrap')}</div>
+          <div class="field"><span class="req">ใครออกเงินจริง</span>${R.seg('payer', [['shop', 'ร้าน'], ['owner', 'เจ้าของ'], ['employee', 'พนักงาน']], 'shop')}</div>
           <span class="muted small" id="pm-help"></span>
           <label class="field" id="pref-box" hidden><span class="req">เลขอ้างอิง / เลขที่สลิป</span><input type="text" id="pref"></label>
-          ${aw.html}
-          <details><summary>เลขที่บิล และวันเวลา</summary><div class="form" style="margin-top:10px">
+          ${aw.html}</div>
+        <div class="card"><details><summary>เลขที่บิล วันเวลา หมายเหตุ</summary><div class="form" style="margin-top:10px">
             <label class="field"><span>เลขที่บิล / อ้างอิง</span><input type="text" id="ref"></label>
             <label class="field"><span>วันเวลาที่รับ</span><input type="datetime-local" id="at" value="${R.nowLocal()}"></label>
             <label class="field"><span>หมายเหตุ</span><input type="text" id="note"></label></div></details></div>
@@ -332,83 +333,163 @@
       ${R.actionbar('<button class="btn primary" id="save">บันทึกรับสินค้า <b id="sum" class="num">฿0.00</b></button>')}`;
     const f = el.querySelector('#f');
     aw.bind(f);
+    const later = () => f.querySelector('#later').checked;
     const payHelp = () => {
       const pm = R.segVal(f, 'pm'), payer = R.segVal(f, 'payer');
       f.querySelector('#pref-box').hidden = !(pm === 'shop_bank' && payer === 'shop');
       f.querySelector('#pm-help').textContent = payer === 'owner' ? 'เจ้าของออกเงินก่อน ระบบบันทึกยอดค้างคืนเจ้าของ'
         : payer === 'employee' ? 'พนักงานออกเงินก่อน ระบบบันทึกยอดค้างคืนพนักงาน รอเจ้าของอนุมัติ'
-        : { shop_bank: 'โอน/สแกนจากบัญชีร้าน ใส่เลขอ้างอิง', shop_cash: 'เงินออกจากลิ้นชักวันนี้ หักให้ตอนปิดยอด', credit: 'ซื้อเชื่อ ค้างจ่ายร้านค้า', unpaid: 'ยังไม่ได้จ่าย บันทึกเป็นค้างจ่าย', none: 'เช่น จ่ายรวมในบิลอื่นแล้ว' }[pm];
+        : { shop_bank: 'โอน/สแกนจากบัญชีร้าน ใส่เลขอ้างอิง', shop_cash: 'เงินออกจากลิ้นชักวันนี้ หักให้ตอนปิดยอด', credit: 'ซื้อเชื่อ ค้างจ่ายร้านค้า', unpaid: 'ยังไม่ได้จ่าย บันทึกเป็นค้างจ่าย', none: 'จ่ายรวมในบิลอื่นแล้ว ไม่บันทึกเงินออกซ้ำ' }[pm];
     };
     f.querySelectorAll('.seg').forEach((s) => s.addEventListener('change', payHelp)); payHelp();
+    const unitLabel = (l) => `${qty(l.qty)} ${esc(l.unit)}${l.unit !== l.base ? (l.factor ? ` (≈ ${qty(l.qty * l.factor)} ${esc(l.base)})` : ' · ยังไม่รู้ว่าเท่ากับกี่ ' + esc(l.base)) : ''}`;
     const drawLines = () => {
-      const trans = Number(R.val(f, '#trans')) || 0, method = R.val(f, '#tm');
-      const al = allocate(lines, trans, method);
-      const goods = lines.reduce((s, l) => s + l.total, 0);
-      f.querySelector('#lines').innerHTML = lines.length ? R.list(al.map((l, i) => R.row({ data: { li: i }, icon: 'box', t: esc(l.name),
-        s: `${qty(l.qty)} ${esc(l.unit)}${l.weight ? ' · ' + qty(l.weight) + ' กก.' : ''} · ${money(l.total)}${trans ? ` + ขนส่ง ${money(l.alloc)}` : ''}`,
-        v: money(l.landed) + '/' + esc(l.unit), vs: 'ต้นทุนถึงร้าน · แตะเพื่อลบ', chev: false })))
-          + `<div class="sum-row"><span>ค่าของ</span><span>${money(goods)}</span></div>${trans ? `<div class="sum-row"><span>ค่าขนส่ง (${esc(ALLOC[method])})</span><span>${money(trans)}</span></div>` : ''}`
+      const lt = later(), trans = lt ? 0 : Number(R.val(f, '#trans')) || 0, method = R.val(f, '#tm');
+      f.querySelector('#trans-card').hidden = lt; f.querySelector('#pay-card').hidden = lt; f.querySelector('#later-help').hidden = !lt;
+      const goods = lt ? 0 : lines.reduce((s, l) => s + l.total, 0);
+      f.querySelector('#lines').innerHTML = lines.length ? R.list(lines.map((l, i) => R.row({ data: { li: i }, icon: 'box', t: esc(l.name),
+        s: unitLabel(l) + (l.weight ? ' · ' + qty(l.weight) + ' กก.' : ''), v: lt ? '<span class="muted small">รอราคา</span>' : money(l.total), vs: 'แตะเพื่อลบ', chev: false })))
+          + (lt ? '' : `<div class="sum-row"><span>ค่าของ</span><span>${money(goods)}</span></div>${trans ? `<div class="sum-row"><span>ค่าขนส่ง (${esc(ALLOC[method])})</span><span>${money(trans)}</span></div>` : ''}`)
         : `<button type="button" class="photo-btn" id="add2" style="width:100%">${R.icon('plus')} เพิ่มของที่รับเข้า</button>`;
-      document.getElementById('sum').textContent = baht(goods + trans);
+      document.getElementById('sum').textContent = lt ? 'รอราคา' : baht(goods + trans);
       f.querySelectorAll('[data-li]').forEach((b) => b.addEventListener('click', () => { lines.splice(b.dataset.li, 1); drawLines(); }));
       on(f.querySelector('#add2'), addLine);
     };
     function addLine() {
+      const lt = later();
       const m = R.modal('เพิ่มของที่รับ', `<form class="form">
-        <label class="field"><span>รายการ</span><select id="it" required><option value="">เลือก…</option>${R.opts(items, null, (x) => (x.code ? x.code + ' · ' : '') + x.name + ' (' + x.unit + ')')}</select></label>
-        <div class="two"><label class="field"><span>จำนวน</span><input type="number" id="q" min="0" step="any" inputmode="decimal" required></label>
-        <label class="field"><span>ราคารวมรายการนี้ (บาท)</span><input type="number" id="t" min="0" step="0.01" inputmode="decimal"></label></div>
-        <label class="field"><span>น้ำหนัก กก. (ถ้าเฉลี่ยค่าขนส่งตามน้ำหนัก)</span><input type="number" id="w" min="0" step="any" inputmode="decimal"></label>
+        <label class="field"><span class="req">รายการ</span><select id="it" required><option value="">เลือก…</option>${R.opts(items, null, (x) => (x.code ? x.code + ' · ' : '') + x.name)}</select></label>
+        <div class="two"><label class="field"><span class="req">จำนวน</span><input type="number" id="q" min="0" step="any" inputmode="decimal" required></label>
+          <label class="field"><span class="req">หน่วยที่ซื้อ</span><select id="u"></select></label></div>
+        <label class="field" id="unew-box" hidden><span class="req">ชื่อหน่วย</span><input type="text" id="unew" placeholder="เช่น หวี ลูก เข่ง แพ็ก ถุง"></label>
+        <label class="field" id="fac-box" hidden><span id="fac-l">1 หน่วยนี้ ≈ กี่</span><input type="number" id="fac" min="0" step="any" inputmode="decimal" placeholder="ไม่รู้ เว้นไว้ได้"></label>
+        <p class="muted small" id="fac-help" hidden>ไม่รู้ก็เว้นไว้ บิลบันทึกได้ปกติ เจ้าของใส่ทีหลัง แล้วระบบเพิ่มสต็อกให้</p>
+        ${lt ? '' : '<label class="field"><span class="req">ราคารวมรายการนี้ (บาท)</span><input type="number" id="t" min="0.01" step="0.01" inputmode="decimal" required></label>'}
+        <details><summary>น้ำหนัก (ถ้าเฉลี่ยค่าขนส่งตามน้ำหนัก)</summary><label class="field"><span>น้ำหนัก กก.</span><input type="number" id="w" min="0" step="any" inputmode="decimal"></label></details>
         <button class="btn primary lg">เพิ่มในรายการ</button></form>`);
+      const sel = m.el.querySelector('#u');
+      const cur = () => items.find((x) => x.id === R.val(m.el, '#it'));
+      const fillUnits = () => {
+        const it = cur();
+        sel.innerHTML = it ? [`<option value="${esc(it.unit)}">${esc(it.unit)}</option>`, ...(it.count_units || []).filter((x) => x.unit).map((x) => `<option value="${esc(x.unit)}">${esc(x.unit)}${Number(x.factor) > 0 ? ` (≈ ${qty(x.factor)} ${esc(it.unit)})` : ''}</option>`), '<option value="__new">หน่วยอื่น…</option>'].join('') : '<option value="">เลือกรายการก่อน</option>';
+        unitBox();
+      };
+      const unitBox = () => {
+        const it = cur(), u = sel.value === '__new' ? R.val(m.el, '#unew') : sel.value, known = it && (u === it.unit || (it.count_units || []).some((x) => x.unit === u && Number(x.factor) > 0));
+        m.el.querySelector('#unew-box').hidden = sel.value !== '__new';
+        m.el.querySelector('#fac-box').hidden = m.el.querySelector('#fac-help').hidden = !it || !u || known;
+        if (it) m.el.querySelector('#fac-l').textContent = `1 ${u || 'หน่วยนี้'} ≈ กี่ ${it.unit} (ถ้ารู้)`;
+      };
+      m.el.querySelector('#it').addEventListener('change', fillUnits); sel.addEventListener('change', unitBox); m.el.querySelector('#unew').addEventListener('input', unitBox); fillUnits();
       m.el.querySelector('form').addEventListener('submit', (ev) => {
         ev.preventDefault();
-        const it = items.find((x) => x.id === R.val(m.el, '#it')), q = Number(R.val(m.el, '#q'));
-        if (!it || !(q > 0)) return R.fail(new Error('เลือกรายการและใส่จำนวน'));
-        lines.push({ stock_item_id: it.id, name: it.name, unit: it.unit, qty: q, total: Number(R.val(m.el, '#t')) || 0, weight: Number(R.val(m.el, '#w')) || null });
+        const it = cur(), q = Number(R.val(m.el, '#q')), u = (sel.value === '__new' ? R.val(m.el, '#unew') : sel.value).trim();
+        if (!it || !(q > 0) || !u) return R.fail(new Error('เลือกรายการ ใส่จำนวน และหน่วยที่ซื้อ'));
+        const known = (it.count_units || []).find((x) => x.unit === u && Number(x.factor) > 0), fac = Number(R.val(m.el, '#fac')) || null;
+        const total = lt ? 0 : Number(R.val(m.el, '#t')) || 0;
+        if (!lt && !(total > 0)) return R.fail(new Error('ใส่ราคา หรือกลับไปติ๊ก "ไม่รู้ราคา"'));
+        lines.push({ stock_item_id: it.id, name: it.name, base: it.unit, unit: u, qty: q, factor: u === it.unit ? 1 : (known ? Number(known.factor) : fac), new_factor: u !== it.unit && !known ? fac : null, total, weight: Number(R.val(m.el, '#w')) || null });
         m.close(); drawLines();
       });
     }
     drawLines();
     on(f.querySelector('#add'), addLine);
+    f.querySelector('#later').addEventListener('change', drawLines);
     on(f.querySelector('#tdef'), () => { f.querySelector('#trans').value = transDefault; drawLines(); });
     f.querySelector('#trans').addEventListener('input', drawLines); f.querySelector('#tm').addEventListener('change', drawLines);
     f.querySelector('#sup').addEventListener('change', () => { f.querySelector('#supname-box').hidden = !!R.val(f, '#sup'); });
     document.getElementById('save').addEventListener('click', (ev) => R.busy(ev.currentTarget, async () => {
+      if (!R.val(f, '#sup') && !R.val(f, '#supname')) throw new Error('ใส่ว่าซื้อจากร้านไหน / ใคร');
       if (!lines.length) throw new Error('เพิ่มของที่รับอย่างน้อย 1 รายการ');
-      if (aw.required() && !aw.ids().length) throw new Error('ร้านกำหนดให้แนบรูปบิลหรือของที่รับ');
-      const pm = R.segVal(f, 'pm'), payer = R.segVal(f, 'payer');
-      if (pm === 'shop_bank' && payer === 'shop' && !R.val(f, '#pref')) throw new Error('จ่ายจากบัญชีร้าน ใส่เลขอ้างอิงด้วย');
+      const lt = later(), pm = R.segVal(f, 'pm'), payer = R.segVal(f, 'payer');
+      if (!lt) {
+        aw.check(f);
+        if (pm === 'shop_bank' && payer === 'shop' && !R.val(f, '#pref')) throw new Error('จ่ายจากบัญชีร้าน ใส่เลขอ้างอิงด้วย');
+      }
       const r = await R.api('receipt.create', { supplier_id: R.val(f, '#sup') || null, supplier_name: R.val(f, '#supname'), ref_no: R.val(f, '#ref'),
-        received_at: R.toIso(R.val(f, '#at')), note: R.val(f, '#note'), attachment_ids: aw.ids(),
-        transport_cost: Number(R.val(f, '#trans')) || 0, transport_method: R.val(f, '#tm'),
-        pay_method: pm === 'none' ? null : pm, payer, pay_ref: R.val(f, '#pref'),
-        lines: lines.map((l) => ({ stock_item_id: l.stock_item_id, qty: l.qty, line_total: l.total, weight: l.weight })) });
-      success(el, { title: 'บันทึกรับสินค้าแล้ว', sub: `${esc(r.receipt_no)} · ${r.lines.length} รายการ · ${baht(r.total_cost)}${Number(r.transport_cost) ? ' (รวมขนส่ง ' + money(r.transport_cost) + ')' : ''}${r.expense ? '<br>ค่าใช้จ่าย: ' + esc(r.expense.status) : ''}`,
+        received_at: R.toIso(R.val(f, '#at')), note: R.val(f, '#note'), attachment_ids: aw.ids(), no_evidence_reason: lt ? null : aw.reason(f), price_later: lt,
+        transport_cost: lt ? 0 : Number(R.val(f, '#trans')) || 0, transport_method: R.val(f, '#tm'),
+        pay_method: lt ? null : pm, payer, pay_ref: R.val(f, '#pref'),
+        lines: lines.map((l) => ({ stock_item_id: l.stock_item_id, qty: l.qty, unit: l.unit, factor: l.new_factor, line_total: l.total, weight: l.weight })) });
+      success(el, { title: lt ? 'บันทึกรับของแล้ว รอเจ้าของใส่ราคา' : 'บันทึกรับสินค้าแล้ว', sub: `${esc(r.receipt_no)} · ${r.lines.length} รายการ${lt ? '' : ' · ' + baht(r.total_cost)}${r.expense ? '<br>ค่าใช้จ่าย: ' + esc(r.expense.status) : ''}${r.needs === 'unit' ? '<br>บางรายการรอเจ้าของใส่ขนาดหน่วย' : ''}`,
         actions: [{ label: 'กลับหน้าหลัก', href: '#/home' }, { label: 'รับของอีกบิล', href: '#/receive', primary: true }] });
     }));
     if (R.can('stock.view')) {
       const list = await R.api('receipt.list', {});
-      el.querySelector('#recent').innerHTML = R.sec('รับของล่าสุด') + R.list(list.slice(0, 15).map((r) => R.row({ data: { r: r.id }, icon: 'box', off: r.status === 'cancelled',
-        t: esc(r.supplier_name || 'ไม่ระบุร้าน'), s: `${R.dt(r.received_at)} · ${r.lines.length} รายการ${Number(r.transport_cost) ? ' · ขนส่ง ' + money(r.transport_cost) : ''}`, v: baht(r.total_cost), pill: r.status === 'cancelled' ? R.statusPill(r.status) : '' })), 'ยังไม่มีการรับของใน 30 วัน');
+      el.querySelector('#recent').innerHTML = R.sec(R.can('expense.approve') ? 'รับของล่าสุด' : 'ที่ฉันรับ 30 วัน') + R.list(list.slice(0, 15).map((r) => R.row({ data: { r: r.id }, icon: 'box', off: r.status === 'cancelled',
+        t: esc(r.supplier_name || 'ไม่ระบุร้าน'), s: `${R.dt(r.received_at)} · ${r.lines.length} รายการ${Number(r.transport_cost) ? ' · ขนส่ง ' + money(r.transport_cost) : ''}`, v: r.price_pending ? 'รอราคา' : baht(r.total_cost), pill: r.status === 'cancelled' ? R.statusPill(r.status) : R.receiptNeedsPill(r) })), 'ยังไม่มีการรับของใน 30 วัน');
       el.querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => receiptSheet(list.find((x) => x.id === b.dataset.r))));
     }
   });
   const PAYER = { shop: 'ร้าน', owner: 'เจ้าของ', employee: 'พนักงาน' }, PM = { shop_bank: 'บัญชีร้าน', shop_cash: 'เงินสดร้าน', credit: 'เครดิต', unpaid: 'ยังไม่จ่าย' };
-  function receiptSheet(r) {
+  const NEEDS = { price: ['warn', 'รอใส่ราคา'], unit: ['warn', 'รอใส่ตัวแปลงหน่วย'], review: ['', 'รอตรวจ'] };
+  R.receiptNeedsPill = (r) => (r.needs && NEEDS[r.needs] ? `<span class="pill ${NEEDS[r.needs][0]}">${NEEDS[r.needs][1]}</span>` : '');
+  function receiptSheet(r, done) {
+    done = done || (() => R.route());
+    const owner = R.can('expense.approve'), live = r.status !== 'cancelled';
+    const lineRow = (l) => `<div class="sum-row"><span>${esc(l.item_name)} ${qty(l.buy_qty ?? l.qty)} ${esc(l.buy_unit || l.unit)}${l.buy_unit && l.buy_unit !== l.stock_unit ? (l.unit_pending ? ` <span class="pill warn">ยังไม่รู้ว่าเท่ากับกี่ ${esc(l.stock_unit)}</span>` : ` <span class="muted small">= ${qty(l.qty)} ${esc(l.stock_unit)}</span>`) : ''}${Number(l.transport_alloc) ? `<br><span class="muted small">+ ขนส่ง ${money(l.transport_alloc)}${l.landed_unit_cost ? ' · ต้นทุนถึงร้าน ' + money(l.landed_unit_cost) + '/' + esc(l.stock_unit) : ''}</span>` : ''}</span><span>${r.price_pending ? '<span class="muted small">รอราคา</span>' : money(l.line_total)}</span></div>`;
     const m = R.modal(r.receipt_no, `<div class="muted small">${R.dt(r.received_at)} · ${esc(r.supplier_name || '-')}${r.ref_no ? ' · บิล ' + esc(r.ref_no) : ''} · โดย ${esc(r.created_by_name)}</div>
-      <div>${r.lines.map((l) => `<div class="sum-row"><span>${esc(l.item_name)} ${qty(l.qty)} ${esc(l.unit)}${Number(l.transport_alloc) ? `<br><span class="muted small">+ ขนส่ง ${money(l.transport_alloc)} · ต้นทุนถึงร้าน ${money(l.landed_unit_cost)}/${esc(l.unit)}</span>` : ''}</span><span>${money(l.line_total)}</span></div>`).join('')}
+      ${R.receiptNeedsPill(r)}
+      <div>${r.lines.map(lineRow).join('')}
         ${Number(r.transport_cost) ? `<div class="sum-row"><span>ค่าขนส่ง (${esc(ALLOC[r.transport_method] || '')})</span><span>${money(r.transport_cost)}</span></div>` : ''}
-        <div class="sum-row total"><span>รวม</span><span>${baht(r.total_cost)}</span></div></div>
+        ${r.price_pending ? '' : `<div class="sum-row total"><span>รวม</span><span>${baht(r.total_cost)}</span></div>`}</div>
       ${r.pay_method || r.payer ? `<p class="muted small">จ่ายโดย ${esc(PM[r.pay_method] || r.pay_method || '-')} · ผู้ออกเงิน ${esc(PAYER[r.payer] || r.payer || '-')}</p>` : ''}
+      ${r.no_evidence_reason ? `<p class="muted small">ไม่มีบิล: ${esc(r.no_evidence_reason)}</p>` : ''}
       ${r.expense ? `<p>ค่าใช้จ่าย ${esc(r.expense.expense_no)} ${R.statusPill(r.expense.status)}</p>` : ''}${R.attachLinks(r.attachments)}
+      ${r.reviewed_at && r.reviewed_by_name ? `<p class="muted small">ตรวจแล้วโดย ${esc(r.reviewed_by_name)} ${R.dt(r.reviewed_at)}</p>` : ''}
       ${r.cancel_reason ? `<div class="note">ยกเลิก: ${esc(r.cancel_reason)}</div>` : ''}
-      ${R.can('stock.cancel') && r.status !== 'cancelled' ? '<button class="btn danger" id="x">ยกเลิกใบรับของ</button>' : ''}${R.purgeBtn(r.status === 'cancelled')}`);
-    R.purge(m.el, 'receipt', r.id, 'ใบรับของ ' + r.receipt_no, () => { m.close(); R.route(); });
+      <div class="btn-row">${owner && live && r.needs === 'price' ? '<button class="btn primary lg" id="sp">ใส่ราคา</button>' : ''}
+        ${owner && live && r.needs === 'unit' && R.can('master.manage') ? '<button class="btn primary lg" id="su">ใส่ตัวแปลงหน่วย</button>' : ''}
+        ${owner && live && r.needs === 'review' ? '<button class="btn primary lg" id="rv">ตรวจแล้ว ถูกต้อง</button>' : ''}</div>
+      ${R.can('stock.cancel') && live ? `<button class="btn danger" id="x">${owner && r.needs === 'review' ? 'ผิด: ยกเลิกแล้วลงใหม่' : 'ยกเลิกใบรับของ'}</button>` : ''}${R.purgeBtn(r.status === 'cancelled')}`);
+    R.purge(m.el, 'receipt', r.id, 'ใบรับของ ' + r.receipt_no, () => { m.close(); done(); });
+    on(m.el.querySelector('#rv'), (ev) => R.busy(ev.currentTarget, async () => { await R.api('receipt.review', { receipt_id: r.id }); m.close(); R.toast('ตรวจแล้ว'); done(); }));
+    on(m.el.querySelector('#sp'), () => { m.close(); priceSheet(r, done); });
+    on(m.el.querySelector('#su'), () => { m.close(); unitSheet(r, done); });
     on(m.el.querySelector('#x'), async () => {
       m.close();
-      const x = await R.askReason('ยกเลิกใบรับของ', { text: 'สต็อกจะถูกตัดออก และค่าใช้จ่ายที่ผูกไว้จะถูกยกเลิกด้วย', danger: true, ok: 'ยกเลิกใบรับของ' });
-      if (x) R.busy(null, async () => { await R.api('receipt.cancel', { receipt_id: r.id, reason: x.reason }); R.toast('ยกเลิกแล้ว'); R.route(); });
+      const x = await R.askReason('ยกเลิกใบรับของ', { text: 'สต็อกจะถูกตัดออก และค่าใช้จ่ายที่ผูกไว้จะถูกยกเลิกด้วย ถ้าลงผิด ให้ลงใบใหม่ที่ถูกต้องหลังยกเลิก', danger: true, ok: 'ยกเลิกใบรับของ' });
+      if (x) R.busy(null, async () => { await R.api('receipt.cancel', { receipt_id: r.id, reason: x.reason }); R.toast('ยกเลิกแล้ว'); done(); });
     });
+  }
+  // owner: price of a "ไม่รู้ราคา" receipt and how it was paid
+  function priceSheet(r, done) {
+    const aw = R.attachWidget('rp', [['slip', 'สลิปโอน'], ['bill', 'บิล/ใบส่งของ'], ['receipt', 'ใบเสร็จ']], 'รูปบิล / สลิป', { required: true, noProof: true });
+    const m = R.modal('ใส่ราคา ' + r.receipt_no, `<form class="form" onsubmit="return false">
+      ${r.lines.map((l) => `<label class="field"><span class="req">${esc(l.item_name)} ${qty(l.buy_qty ?? l.qty)} ${esc(l.buy_unit || l.unit)} ราคารวม (บาท)</span><input type="number" data-lp="${l.id}" min="0.01" step="0.01" inputmode="decimal" required></label>`).join('')}
+      <label class="field"><span>ค่าขนส่ง (บาท)</span><input type="number" id="tr" min="0" step="0.01" inputmode="decimal" placeholder="0"></label>
+      <div class="field"><span class="req">วิธีจ่าย</span>${R.seg('ppm', [['shop_bank', 'บัญชีร้าน'], ['shop_cash', 'เงินสดร้าน'], ['credit', 'เครดิต'], ['unpaid', 'ยังไม่จ่าย'], ['none', 'จ่ายรวมบิลอื่นแล้ว']], 'shop_bank', 'wrap')}</div>
+      <div class="field"><span class="req">ใครออกเงินจริง</span>${R.seg('ppay', [['shop', 'ร้าน'], ['owner', 'เจ้าของ'], ['employee', 'พนักงาน']], 'owner')}</div>
+      <label class="field"><span>เลขอ้างอิง / เลขที่สลิป</span><input type="text" id="pr"></label>
+      ${aw.html}<div class="sum-row total"><span>รวม</span><b id="ptot">฿0.00</b></div>
+      <button class="btn primary lg" id="ok">บันทึกราคา</button></form>`);
+    aw.bind(m.el);
+    const tot = () => { m.el.querySelector('#ptot').textContent = baht([...m.el.querySelectorAll('[data-lp]')].reduce((s, i) => s + (Number(i.value) || 0), 0) + (Number(R.val(m.el, '#tr')) || 0)); };
+    m.el.querySelectorAll('input').forEach((i) => i.addEventListener('input', tot));
+    on(m.el.querySelector('#ok'), (ev) => R.busy(ev.currentTarget, async () => {
+      const lines = [...m.el.querySelectorAll('[data-lp]')].map((i) => ({ id: i.dataset.lp, line_total: Number(i.value) || 0 }));
+      if (lines.some((l) => !(l.line_total > 0))) throw new Error('ใส่ราคาให้ครบทุกรายการ');
+      aw.check(m.el);
+      const pm = R.segVal(m.el, 'ppm'), payer = R.segVal(m.el, 'ppay');
+      if (pm === 'shop_bank' && payer === 'shop' && !R.val(m.el, '#pr')) throw new Error('จ่ายจากบัญชีร้าน ใส่เลขอ้างอิงด้วย');
+      await R.api('receipt.set_price', { receipt_id: r.id, lines, transport_cost: Number(R.val(m.el, '#tr')) || 0, pay_method: pm, payer, pay_ref: R.val(m.el, '#pr'), attachment_ids: aw.ids(), no_evidence_reason: aw.reason(m.el) });
+      m.close(); R.toast('บันทึกราคาแล้ว ค่าใช้จ่ายและต้นทุนอัปเดตแล้ว'); done();
+    }));
+  }
+  // owner: how big is the unit the staff bought in (1 หวี ≈ x กก.)
+  function unitSheet(r, done) {
+    const wait = r.lines.filter((l) => l.unit_pending);
+    const m = R.modal('ใส่ตัวแปลงหน่วย', `<form class="form" onsubmit="return false"><p class="muted small">ใส่ครั้งเดียว ระบบจำไว้ใช้กับการรับของครั้งต่อไป และเพิ่มสต็อกที่รอไว้ให้</p>
+      ${wait.map((l, i) => `<label class="field"><span class="req">1 ${esc(l.buy_unit)} ของ ${esc(l.item_name)} ≈ กี่ ${esc(l.stock_unit)}</span><input type="number" data-uf="${i}" min="0" step="any" inputmode="decimal" required></label>`).join('')}
+      <button class="btn primary lg" id="ok">บันทึก</button></form>`);
+    on(m.el.querySelector('#ok'), (ev) => R.busy(ev.currentTarget, async () => {
+      for (const [i, l] of wait.entries()) {
+        const fv = Number(m.el.querySelector(`[data-uf="${i}"]`).value);
+        if (!(fv > 0)) throw new Error('ใส่ขนาดของ ' + l.buy_unit + ' ให้ครบ');
+        await R.api('stock.unit_set', { stock_item_id: l.stock_item_id, unit: l.buy_unit, factor: fv });
+      }
+      m.close(); R.toast('บันทึกแล้ว สต็อกอัปเดตแล้ว'); done();
+    }));
   }
   R.receiptSheet = receiptSheet;
 
@@ -424,11 +505,11 @@
       aw,
       html: `${R.seg(prefix + '-kind', [['waste', R.WASTE_KIND.waste], ['staff_meal', R.WASTE_KIND.staff_meal]], 'waste')}
         <p class="muted small" id="${prefix}-khelp"></p>
-        <div class="field" id="${prefix}-pbox"><span>สินค้า</span><div class="ptiles">${prods.map((p) => `<button type="button" data-wp="${p.id}" aria-pressed="false"><span class="e">${emo(p)}</span><span>${esc(p.name)}</span></button>`).join('')}</div>
+        <div class="field" id="${prefix}-pbox"><span class="req">สินค้า</span><div class="ptiles">${prods.map((p) => `<button type="button" data-wp="${p.id}" aria-pressed="false"><span class="e">${emo(p)}</span><span>${esc(p.name)}</span></button>`).join('')}</div>
           <button type="button" class="linkbtn" id="${prefix}-toitem">เลือกวัตถุดิบแทน</button></div>
-        <label class="field" id="${prefix}-ibox" hidden><span>วัตถุดิบ</span><select id="${prefix}-item"><option value="">เลือก…</option>${R.opts(items, null, (x) => x.name + ' (' + x.unit + ')')}</select>
+        <label class="field" id="${prefix}-ibox" hidden><span class="req">วัตถุดิบ</span><select id="${prefix}-item"><option value="">เลือก…</option>${R.opts(items, null, (x) => x.name + ' (' + x.unit + ')')}</select>
           <button type="button" class="linkbtn" id="${prefix}-toprod">กลับไปเลือกสินค้า</button></label>
-        <div class="field"><span>จำนวน <span id="${prefix}-unit" class="muted small"></span></span>
+        <div class="field"><span class="req">จำนวน <span id="${prefix}-unit" class="muted small"></span></span>
           <div class="qstep"><button type="button" data-q="-1" aria-label="ลดจำนวน">−</button><input type="number" id="${prefix}-qty" min="0" step="any" inputmode="decimal" value="1" aria-label="จำนวน"><button type="button" data-q="1" aria-label="เพิ่มจำนวน">+</button></div></div>
         <label class="field" id="${prefix}-ubox" hidden><span>ของใคร (ไม่บังคับ)</span><select id="${prefix}-for"><option value="">ทีมงาน (ไม่ระบุ)</option>${R.opts(users.filter((x) => x.role !== 'admin'), null, (x) => x.display_name)}</select></label>
         <div class="field" id="${prefix}-rbox"><span class="req">สาเหตุ</span><div class="chips" style="flex-wrap:wrap">${reasons().map((r) => `<button type="button" class="chip" data-reason="${esc(r)}" aria-pressed="false">${esc(r)}</button>`).join('')}</div>
@@ -509,7 +590,7 @@
   // ------------------------------------------------------------ expense with receipt / slip reader
   R.def('expense', { title: 'บันทึกค่าใช้จ่าย', back: 'home' }, async function (el) {
     const evReq = !!R.settingVal('evidence_required', false);
-    const aw = R.attachWidget('exp', [['receipt', 'ใบเสร็จ'], ['tax_invoice', 'ใบกำกับภาษี'], ['bill', 'บิลเงินสด'], ['slip', 'สลิปโอน'], ['substitute', 'ใบรับรองแทนใบเสร็จ'], ['photo', 'รูปถ่าย']], 'หลักฐาน (ใบเสร็จ / สลิป / บิล)', { required: evReq });
+    const aw = R.attachWidget('exp', [['receipt', 'ใบเสร็จ'], ['tax_invoice', 'ใบกำกับภาษี'], ['bill', 'บิลเงินสด'], ['slip', 'สลิปโอน'], ['substitute', 'ใบรับรองแทนใบเสร็จ'], ['photo', 'รูปถ่าย']], 'หลักฐาน (ใบเสร็จ / สลิป / บิล)', { required: true, noProof: true });
     const cats = B().categories;
     el.innerHTML = `<form class="form" id="f" onsubmit="return false">
         <div class="card">${aw.html}
@@ -517,9 +598,9 @@
           <div class="note info" id="ocr-note" hidden>ช่องกรอบสีฟ้าอ่านมาจากรูป อาจคลาดเคลื่อน ตรวจให้ตรงกับเอกสารก่อนบันทึก
             <label class="check"><input type="checkbox" id="ocr-ok"> ตรวจแล้ว ถูกต้อง</label></div></div>
         <div class="card">
-          <label class="field"><span>จำนวนเงิน (บาท)</span><input type="number" id="amt" min="0.01" step="0.01" inputmode="decimal" class="input-amt" placeholder="0.00" required></label>
-          <label class="field"><span>จ่ายค่าอะไร</span><input type="text" id="desc" required placeholder="เช่น น้ำแข็ง 2 ถุง"></label>
-          <label class="field"><span>หมวด</span><select id="cat" required>${R.catOptions(cats)}</select></label>
+          <label class="field"><span class="req">จำนวนเงิน (บาท)</span><input type="number" id="amt" min="0.01" step="0.01" inputmode="decimal" class="input-amt" placeholder="0.00" required></label>
+          <label class="field"><span class="req">จ่ายค่าอะไร</span><input type="text" id="desc" required placeholder="เช่น น้ำแข็ง 2 ถุง"></label>
+          <label class="field"><span class="req">หมวด</span><select id="cat" required>${R.catOptions(cats)}</select></label>
           <div id="catx"></div>
           <div id="fundwrap" class="form" style="gap:inherit">${fundBlock('fund')}</div>
           <details><summary>จ่ายให้ใคร วันเวลา เลขที่เอกสาร</summary><div class="form" style="margin-top:10px">
@@ -532,7 +613,7 @@
       <div id="mine"></div>
       ${R.actionbar('<button class="btn primary" id="save">บันทึกค่าใช้จ่าย</button>')}`;
     const f = el.querySelector('#f');
-    bindFund(f, 'fund', (v) => aw.setRequired(f, evReq && v !== 'credit'));
+    bindFund(f, 'fund', (v) => aw.setRequired(f, v !== 'credit'));
     // wages are paid from workdays (no hand counting); a wage advance needs the person
     const catx = () => {
       const c = cats.find((x) => x.id === R.val(f, '#cat')) || {}, box = f.querySelector('#catx');
@@ -580,10 +661,10 @@
       if (!f.reportValidity()) return;
       if (ocrData && !R.val(f, '#ocr-ok')) throw new Error('ตรวจข้อมูลที่อ่านจากรูป แล้วติ๊ก "ตรวจแล้ว ถูกต้อง"');
       const fv = fundValue(f, 'fund');
-      if (aw.required() && !aw.ids().length) throw new Error('ร้านกำหนดให้แนบหลักฐานทุกครั้ง');
+      aw.check(f);
       if ((fv.fund_source === 'shop_bank' || fv.fund_source === 'other_account') && !fv.pay_ref) throw new Error('จ่ายผ่านบัญชี ใส่เลขอ้างอิง / เลขที่สลิป');
       const e = await R.api('expense.create', { occurred_at: R.toIso(R.val(f, '#at')), category_id: R.val(f, '#cat'), payee: R.val(f, '#payee'), amount: R.val(f, '#amt'),
-        description: R.val(f, '#desc'), advance_user_id: R.val(f, '#advu') || null, doc_type: R.val(f, '#doct'), doc_no: R.val(f, '#docno'), due_date: R.val(f, '#due') || null, attachment_ids: aw.ids(),
+        description: R.val(f, '#desc'), advance_user_id: R.val(f, '#advu') || null, doc_type: R.val(f, '#doct'), doc_no: R.val(f, '#docno'), due_date: R.val(f, '#due') || null, attachment_ids: aw.ids(), no_evidence_reason: aw.reason(f),
         ocr_snapshot: ocrData ? { ...ocrData, reviewed_by_user: true } : null, ...fv });
       success(el, { title: 'บันทึกค่าใช้จ่ายแล้ว', sub: `${esc(e.expense_no)} · ${baht(e.amount)} · ${esc(e.status)}${e.owed_to ? '<br>ค้างคืน ' + esc(e.owed_to) : ''}`,
         actions: [{ label: 'กลับหน้าหลัก', href: '#/home' }, { label: 'บันทึกอีกรายการ', href: '#/expense', primary: true }] });
@@ -678,7 +759,7 @@
           return `<div class="card"><h2>${esc(x.name)}</h2><p class="muted small">ในระบบ ${x.orders} ออเดอร์ · ${baht(x.net)}${Number(x.est_fee) ? ' · ค่าธรรมเนียมประมาณ ' + money(x.est_fee) : ''}</p>
             <div class="two"><label class="field"><span>จำนวนออเดอร์ในแอป</span><input type="number" min="0" step="1" inputmode="numeric" data-dco="${x.channel_id}" value="${v.orders}"></label>
             <label class="field"><span>ยอดขายในแอป (บาท)</span><input type="number" min="0" step="0.01" inputmode="decimal" data-dcg="${x.channel_id}" value="${v.gross}"></label></div>
-            ${diff || Number(v.orders) !== Number(x.orders) ? `<label class="field"><span>ไม่ตรงกับระบบ${diff ? ' ' + (diff > 0 ? '+' : '') + money(diff) : ''} · เหตุผล</span><input type="text" data-dcn="${x.channel_id}" value="${esc(v.note)}" placeholder="เช่น ลูกค้ายกเลิกในแอป"></label>` : '<div class="banner ok"><span class="dot"></span>ตรงกับระบบ</div>'}</div>`; }).join('')
+            ${diff || Number(v.orders) !== Number(x.orders) ? `<label class="field"><span class="req">ไม่ตรงกับระบบ${diff ? ' ' + (diff > 0 ? '+' : '') + money(diff) : ''} · เหตุผล</span><input type="text" data-dcn="${x.channel_id}" value="${esc(v.note)}" placeholder="เช่น ลูกค้ายกเลิกในแอป"></label>` : '<div class="banner ok"><span class="dot"></span>ตรงกับระบบ</div>'}</div>`; }).join('')
           : R.empty('ร้านยังไม่มีช่องทาง Delivery')}`;
       }
       if (st.step === 2) return `${R.sec('ของเสียที่บันทึกแล้ววันนี้')}
@@ -687,7 +768,7 @@
         ${R.list(st.waste.map((w, i) => R.row({ data: { wi: i }, icon: 'trash', tone: 'warn', t: `${esc(w._label ? (w._label.emoji ? w._label.emoji + ' ' : '') + w._label.name : '')} ${qty(w.qty)} ${esc(w._label ? w._label.unit : '')}`, s: w.kind !== 'waste' ? R.WASTE_KIND[w.kind] : esc(w.reason), vs: 'แตะเพื่อลบ', chev: false })), 'ไม่มีของเสียเพิ่ม')}
         <p class="muted small" style="padding:0 4px">ของเสียที่เพิ่มตรงนี้จะถูกบันทึกพร้อมรายงาน และตัดสต็อกตามสูตรของสินค้า</p>`;
       if (st.step === 3) return `${R.can('stock.count') && pv.stock.length ? `<p class="muted small" style="padding:0 4px">นับเป็นหน่วยที่สะดวก เช่น กล่องที่ตัดแล้ว ไม้ที่เสียบแล้ว ผลไม้ทั้งลูก หรือชั่งเป็นกิโล ใส่ได้หลายช่องพร้อมกัน ระบบรวมเป็นกิโลให้ ใส่เฉพาะที่นับ ผลนับส่งให้เจ้าของร้านอนุมัติ</p>
-          <div class="cnts">${pv.stock.map((s) => countBox(s, st.counts[s.id])).join('')}</div>` : R.empty('ไม่มีรายการให้นับ')}
+          <div class="cnts">${pv.stock.map((s) => countBox(s, st.counts[s.id])).join('')}</div><p class="muted small" style="padding:0 4px"><span class="req">ต้องนับทุกรายการที่ระบบบอกว่ายังมีของ (หมดใส่ 0)</span></p>` : R.empty('ไม่มีรายการให้นับ')}
         <div class="card"><label class="field"><span>สังเกตเรื่องของเหลือ / วัตถุดิบ (ถ้ามี)</span><textarea id="snote">${esc(st.stockNote)}</textarea></label></div>`;
       if (st.step === 4) {
         const v = hasCount() ? variance() : null;
@@ -755,6 +836,11 @@
     function validate() {
       if (st.step === 0 && c.products.some((p) => r2(st.pc[p.product_id].q - p.storefront_qty) && !st.pc[p.product_id].note)) throw new Error('สินค้าที่จำนวนไม่ตรงกับระบบ ใส่เหตุผลด้วย');
       if (st.step === 1 && Object.entries(st.dc).some(([id, x]) => { const ch = c.channels.find((y) => y.channel_id === id); return (r2(x.gross - Number(ch.net)) || Number(x.orders) !== Number(ch.orders)) && !x.note; })) throw new Error('ยอด Delivery ไม่ตรงกับระบบ ใส่เหตุผลด้วย');
+      // leftovers: everything the system says is still in stock must be counted (0 when it is gone)
+      if (st.step === 3 && R.can('stock.count')) {
+        const done = new Set(countPayload(pv.stock, st.counts).map((x) => x.stock_item_id)), miss = pv.stock.filter((x) => Number(x.system_qty) > 0 && !done.has(x.id));
+        if (miss.length) throw new Error('นับของเหลือให้ครบ (ถ้าหมดใส่ 0): ' + miss.slice(0, 4).map((x) => x.name).join(', ') + (miss.length > 4 ? ' และอีก ' + (miss.length - 4) + ' รายการ' : ''));
+      }
       if (st.step === 4) {
         if (st.cashSales !== sysCash && !st.cashReason) throw new Error('เงินสดที่ลูกค้าจ่ายไม่ตรงกับออเดอร์ ใส่เหตุผล');
         if (st.qr !== Number(c.qr_sales) && !st.qrReason) throw new Error('ยอด QR ไม่ตรงกับออเดอร์ ใส่เหตุผล');
@@ -801,7 +887,7 @@
         on(el.querySelector('#fix-start'), () => {
           const m = R.modal('แก้เงินทอนต้นวัน', `<form class="form"><p class="muted">ในระบบ ${baht(sysStart)} (ยอดนับเมื่อปิดยอดครั้งก่อน)</p>
             <label class="field"><span>เงินทอนต้นวันที่ถูกต้อง</span><input type="number" id="v" step="0.01" inputmode="decimal" value="${st.start}" required></label>
-            <label class="field"><span>เหตุผล</span><input type="text" id="r" value="${esc(st.startReason)}" required></label><button class="btn primary lg">บันทึก</button></form>`);
+            <label class="field"><span class="req">เหตุผล</span><input type="text" id="r" value="${esc(st.startReason)}" required></label><button class="btn primary lg">บันทึก</button></form>`);
           m.el.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); save(); st.start = Number(R.val(m.el, '#v')); st.startReason = R.val(m.el, '#r'); m.close(); draw(); });
         });
       }
@@ -913,8 +999,8 @@
         { l: 'ใช้ในสูตร', pri: 2, f: (b) => (b.used_in_recipe ? 'ใช่' : 'ไม่อยู่ในสูตรสินค้าไหน') },
         { l: 'ใช้เฉลี่ย/วัน (14 วัน)', num: true, pri: 2, f: (b) => qty(b.avg_daily_use) },
         { l: 'ขั้นต่ำ', num: true, pri: 2, f: (b) => qty(b.min_qty) },
-        { l: 'ต้นทุน/หน่วย', num: true, pri: 2, f: (b) => (Number(b.avg_cost) ? money(b.avg_cost) : R.unconfirmed('ยังไม่มี')) },
-        { l: 'มูลค่า', num: true, pri: 2, f: (b) => (Number(b.qty) > 0 ? money(b.value) : '-') }], bal, { click: 'led', empty: 'ยังไม่มีรายการสต็อก' })
+        ...(owner ? [{ l: 'ต้นทุน/หน่วย', num: true, pri: 2, f: (b) => (Number(b.avg_cost) ? money(b.avg_cost) : R.unconfirmed('ยังไม่มี')) },
+        { l: 'มูลค่า', num: true, pri: 2, f: (b) => (Number(b.qty) > 0 ? money(b.value) : '-') }] : [])], bal, { click: 'led', empty: 'ยังไม่มีรายการสต็อก' })
         + '<p class="muted small" style="padding:0 4px">แนะนำซื้อ = ใช้เฉลี่ยต่อวัน × 2 วัน + ขั้นต่ำ − คงเหลือ</p>'
       : `${low.length ? `${R.sec('ใกล้หมด / ควรซื้อ')}${R.list(low.map((b) => R.row({ data: { led: b.id }, icon: 'box', tone: b.status === 'out' ? 'bad' : 'warn', t: esc(b.name),
         s: Number(b.suggest) ? `แนะนำซื้อ ${qty(b.suggest)} ${esc(b.unit)}` : 'ต่ำกว่าขั้นต่ำ', v: `${qty(b.qty)} ${esc(b.unit)}`, pill: R.statusPill(b.status) })))}` : ''}

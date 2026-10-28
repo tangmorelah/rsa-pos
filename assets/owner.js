@@ -27,6 +27,7 @@
   R.approvalItems = async function () {
     const jobs = [];
     if (R.can('expense.approve')) { jobs.push(R.api('expense.list', { status: 'รออนุมัติ' }).then((l) => l.map((x) => ({ kind: 'approve', x })))); jobs.push(R.api('expense.list', { unreviewed: true }).then((l) => l.map((x) => ({ kind: 'review', x })))); }
+    if (R.can('expense.approve') && R.can('stock.view')) jobs.push(R.api('receipt.list', { queue: true }).then((l) => l.map((x) => ({ kind: 'receipt', x }))));
     if (R.can('expense.pay')) jobs.push(R.api('expense.list', { status: 'รอทำจ่าย' }).then((l) => l.map((x) => ({ kind: 'pay', x }))));
     if (R.can('stock.approve')) jobs.push(R.api('stocktake.list', { status: 'pending' }).then((l) => l.map((x) => ({ kind: 'count', x }))));
     if (R.can('closing.view_all')) jobs.push(R.api('close.list', { from: R.addDays(R.today(), -14) }).then((l) => l.filter((c) => !c.reviewed_at && (Number(c.variance) || c.adjustments.length)).map((x) => ({ kind: 'close', x }))));
@@ -145,6 +146,7 @@
       const grp = (k) => items.filter((i) => i.kind === k);
       const exRow = (i) => R.row({ data: { k: i.kind, id: i.x.id }, avatar: i.x.created_by_name || '?', t: esc(i.x.description), s: `${esc(i.x.created_by_name)} · ${R.dt(i.x.occurred_at)}${i.x.attachments.length ? '' : ' · ไม่มีรูป'}`, v: baht(i.x.amount) });
       const sections = [
+        ['รับของรอเจ้าของ', grp('receipt').map((i) => R.row({ data: { k: i.kind, id: i.x.id }, icon: 'box', t: esc(i.x.supplier_name || 'ไม่ระบุร้าน'), s: `${esc(i.x.created_by_name)} · ${R.dt(i.x.received_at)} · ${i.x.lines.map((l) => esc(l.item_name)).join(', ')}`, v: i.x.price_pending ? 'รอราคา' : baht(i.x.total_cost), pill: R.receiptNeedsPill(i.x) }))],
         ['ค่าใช้จ่ายรออนุมัติ', grp('approve').map(exRow)],
         ['รอจ่ายเงิน', grp('pay').map((i) => R.row({ data: { k: i.kind, id: i.x.id }, icon: 'wallet', t: esc(i.x.description), s: `${i.x.owed_to ? 'คืนเงินให้ ' + esc(i.x.owed_to) : esc(i.x.payee || i.x.category_name || '')}${i.x.due_date ? ' · ครบ ' + R.date(i.x.due_date) : ''}`, v: baht(i.x.amount) }))],
         ['จ่ายแล้ว รอเจ้าของตรวจ', grp('review').map(exRow)],
@@ -155,7 +157,7 @@
         : `<div class="card success"><span class="mark">${R.icon('check')}</span><h2>ไม่มีอะไรรออนุมัติ</h2><p class="muted">ทุกอย่างเรียบร้อย</p></div>`;
       el.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => {
         const it = items.find((i) => i.kind === b.dataset.k && i.x.id === b.dataset.id), done = () => draw().catch(R.fail);
-        if (it.kind === 'count') stocktakeSheet(it.x, done); else if (it.kind === 'close') closeSheet(it.x, done); else expenseSheet(it.x, done);
+        if (it.kind === 'receipt') R.receiptSheet(it.x, done); else if (it.kind === 'count') stocktakeSheet(it.x, done); else if (it.kind === 'close') closeSheet(it.x, done); else expenseSheet(it.x, done);
       }));
     }
     await draw();

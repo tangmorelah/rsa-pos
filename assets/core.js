@@ -519,7 +519,8 @@
     const seen = new Set(tabNames);
     const groups = RSA.MENU.filter((g) => isOwnerView() || g.group === 'งานประจำวัน' || g.group === 'ร้าน')
       .sort((a, b) => (isOwnerView() && a.group === 'งานประจำวัน' ? 1 : 0) - (isOwnerView() && b.group === 'งานประจำวัน' ? 1 : 0)).map((g) => {
-      const items = g.items.filter((i) => RSA.can(i.perm) && !seen.has(i.r));
+      const onHome = isOwnerView() ? [] : ['orders', 'receive', 'expense', 'waste'];   // staff reach these from the home screen and the sell tab
+      const items = g.items.filter((i) => RSA.can(i.perm) && !seen.has(i.r) && !onHome.includes(i.r));
       items.forEach((i) => seen.add(i.r));
       return items.length ? RSA.sec(g.group) + RSA.list(items.map((i) => RSA.row({ href: '#/' + i.r, icon: i.icon, t: esc(i.t) }))) : '';
     }).join('');
