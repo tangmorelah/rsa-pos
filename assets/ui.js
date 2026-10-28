@@ -179,7 +179,8 @@
         ${kinds.length > 1 ? `<select id="aw-${key}-kind" aria-label="ชนิดหลักฐาน">${kinds.map((k) => `<option value="${k[0]}">${k[1]}</option>`).join('')}</select>` : `<input type="hidden" id="aw-${key}-kind" value="${kinds[0][0]}">`}
         <div class="ev-btns"><label class="photo-btn">${R.icon('camera')} ถ่ายรูป<input type="file" accept="image/*" capture="environment" hidden data-aw="${key}"></label>
           <label class="photo-btn">${R.icon('clip')} เลือกรูปจากเครื่อง<input type="file" accept="image/*,application/pdf" hidden data-aw="${key}"></label></div>
-        <div class="ev-list" id="aw-${key}-list"></div></div>`,
+        <div class="ev-list" id="aw-${key}-list"></div>
+        ${opts.noProof ? `<details class="ev-none" id="aw-${key}-none"><summary>ไม่มีบิล / สลิป</summary><label class="field"><span class="req">เหตุผลที่ไม่มีหลักฐาน</span><input type="text" id="aw-${key}-why" placeholder="เช่น ซื้อตลาดสด แม่ค้าไม่มีบิล"></label></details>` : ''}</div>`,
       bind(root, onAdd) {
         const list = root.querySelector(`#aw-${key}-list`);
         root.querySelectorAll(`input[data-aw="${key}"]`).forEach((input) => input.addEventListener('change', async () => {
@@ -199,6 +200,9 @@
       setRequired(root, on) { const p = root.querySelector(`#aw-${key}-req`); if (p) { p.textContent = on ? 'จำเป็น' : 'ถ้ามี'; p.className = 'pill ' + (on ? 'bad' : ''); } opts.required = on; },
       required: () => !!opts.required,
       ids: () => files.map((f) => f.id),
+      reason: (root) => { const i = root.querySelector(`#aw-${key}-why`); return i ? i.value.trim() : ''; },
+      // required evidence: a file, or (when allowed) a reason why there is none
+      check(root) { if (opts.required && !files.length && !this.reason(root)) throw new Error(opts.noProof ? 'แนบรูปบิล / สลิป หรือกด "ไม่มีบิล / สลิป" แล้วใส่เหตุผล' : 'ต้องแนบรูปหลักฐาน'); },
     };
   };
 

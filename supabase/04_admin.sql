@@ -59,7 +59,7 @@ begin
   end if;
 
   -- costs: over budget, cost ratios, recurring bills overdue, missing documents, 5 wage paydays (14_costs.sql)
-  v_ex := v_ex || rsa_cost_alerts(v_today);
+  v_ex := v_ex || rsa_cost_alerts(v_today) || rsa_receipt_alerts();
 
   select * into v_close from daily_closes where biz_date = v_date;
   return jsonb_build_object(
